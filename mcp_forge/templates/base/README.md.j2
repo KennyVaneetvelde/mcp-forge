@@ -1,0 +1,137 @@
+# {{ config.project_name }}
+
+{{ config.description }}
+
+## Setup
+
+This project uses `uv` for dependency management. Make sure you have it installed:
+
+```bash
+pip install uv
+```
+
+Then install the project dependencies:
+
+```bash
+uv venv
+uv pip install -e .
+```
+
+## Running the Server
+
+To run the server directly:
+
+```bash
+uv run python -m {{ config.package_name }}.server
+```
+
+## Testing
+
+A test client is provided to help test the server and its tools. To run it:
+
+```bash
+uv run python test_client.py
+```
+
+The test client will:
+1. Connect to the server
+2. List all available tools
+3. Test each tool with example inputs
+4. Display results in a formatted way
+
+## Adding New Tools
+
+Tools are located in the `{{ config.package_name }}/tools` directory. To add a new tool:
+
+1. Create a new tool using the scaffold command:
+   ```bash
+   mcp-scaffold add MyNewTool
+   ```
+
+2. This will generate a basic tool template in `{{ config.package_name }}/tools/my_new_tool.py`
+
+3. Edit the input schema and implementation in the newly created file
+
+4. The tool will automatically be registered in the server
+
+## Adding New Resources
+
+Resources are located in the `{{ config.package_name }}/resources` directory. To add a new resource:
+
+1. Create a new resource file in the resources directory
+   ```python
+   # {{ config.package_name }}/resources/my_resource.py
+   from ..interfaces.resource import Resource
+
+   class MyResource(Resource):
+       name = "My Resource"
+       description = "Description of my resource"
+       uri = "my://resource/{param}"  # Use {param} syntax for dynamic parameters
+       mime_type = "text/plain"
+       params = ["param"]  # List parameters that appear in the URI
+
+       async def read(self, **kwargs) -> str:
+           param = kwargs.get("param", "default")
+           return f"Resource content with param: {param}"
+   ```
+
+2. Add your resource to the __init__.py file in the resources directory
+   ```python
+   from .my_resource import MyResource
+   ```
+
+3. Update the __all__ list to include your resource
+   ```python
+   __all__ = [..., "MyResource"]
+   ```
+
+4. Add your resource to the get_available_resources function in server.py
+   ```python
+   def get_available_resources() -> List[Resource]:
+       return [
+           ...,
+           MyResource(),
+       ]
+   ```
+
+## Tool Structure
+
+Each tool consists of:
+
+1. An input model class that defines the parameters your tool accepts
+2. A tool class that implements the execution logic
+
+Example input model:
+```python
+class MyToolInput(BaseToolInput):
+    """Input schema for the MyTool tool."""
+    name: str = Field(description="Name parameter")
+    count: int = Field(description="Count parameter", default=1)
+```
+
+Example tool implementation:
+```python
+class MyTool(Tool):
+    """Tool for doing something useful."""
+    name = "myTool"  # camelCase name used in API calls
+    description = "Description of what the tool does"
+    input_model = MyToolInput
+
+    async def execute(self, input_data: MyToolInput) -> ToolResponse:
+        # Your implementation here
+        result = {
+            "status": "success",
+            "processed": input_data.name,
+            "count": input_data.count
+        }
+
+        return ToolResponse(
+            content=[ToolContent(type="text", text=json.dumps(result))]
+        )
+```
+
+For more complex tools, you can:
+- Add more sophisticated input validation
+- Connect to external services
+- Return structured data
+- Handle errors gracefully

@@ -1,0 +1,10 @@
+# Ignore Python cache directories and compiled files
+**/__pycache__/
+*.py[cod]
+
+# Ignore common lock and environment files
+uv.lock
+*.env
+.venv/
+dist/
+build/

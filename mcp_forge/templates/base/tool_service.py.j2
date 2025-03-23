@@ -1,0 +1,89 @@
+"""Service layer for managing tools."""
+from typing import Dict, List, Any, Type, cast
+from mcp.server.fastmcp import FastMCP
+from {{ config.package_name }}.interfaces.tool import Tool, ToolResponse, BaseToolInput
+
+
+class ToolService:
+    """Service for managing and executing tools."""
+
+    def __init__(self):
+        self._tools: Dict[str, Tool] = {}
+
+    def register_tool(self, tool: Tool) -> None:
+        """Register a new tool."""
+        self._tools[tool.name] = tool
+
+    def register_tools(self, tools: List[Tool]) -> None:
+        """Register multiple tools."""
+        for tool in tools:
+            self.register_tool(tool)
+
+    def get_tool(self, tool_name: str) -> Tool:
+        """Get a tool by name."""
+        if tool_name not in self._tools:
+            raise ValueError(f"Tool not found: {tool_name}")
+        return self._tools[tool_name]
+
+    async def execute_tool(self, tool_name: str, input_data: Dict[str, Any]) -> ToolResponse:
+        """Execute a tool by name with given arguments.
+
+        Args:
+            tool_name: The name of the tool to execute
+            input_data: Dictionary of input arguments for the tool
+
+        Returns:
+            The tool's response containing the execution results
+
+        Raises:
+            ValueError: If the tool is not found
+            ValidationError: If the input data is invalid
+        """
+        tool = self.get_tool(tool_name)
+
+        # Convert input dictionary to the tool's input model
+        input_model = tool.input_model(**input_data)
+
+        # Execute the tool with validated input
+        return await tool.execute(input_model)
+
+    def register_mcp_handlers(self, mcp: FastMCP) -> None:
+        """Register all tools as MCP handlers."""
+        for tool in self._tools.values():
+            # Get the tool's schema
+            schema = tool.input_model.model_json_schema()
+            properties = schema.get("properties", {})
+
+            # Create a function signature that matches the schema
+            params = []
+            for name, info in properties.items():
+                type_hint = "str"  # Default to str
+                if info.get("type") == "integer":
+                    type_hint = "int"
+                elif info.get("type") == "number":
+                    type_hint = "float"
+                elif info.get("type") == "boolean":
+                    type_hint = "bool"
+
+                default = info.get("default", "...")
+                if default == "...":
+                    params.append(f"{name}: {type_hint}")
+                else:
+                    params.append(f"{name}: {type_hint} = {repr(default)}")
+
+            # Create the function definition
+            fn_def = f"async def {tool.name}({', '.join(params)}):\n"
+            fn_def += f'    """{tool.description}"""\n'
+            fn_def += "    result = await self.execute_tool(tool.name, locals())\n"
+            fn_def += "    return result.content[0].text"
+
+            # Create the function
+            namespace = {"self": self, "tool": tool}
+            exec(fn_def, namespace)
+            handler = namespace[tool.name]
+
+            # Register the handler
+            mcp.tool(
+                name=tool.name,
+                description=tool.description
+            )(handler)

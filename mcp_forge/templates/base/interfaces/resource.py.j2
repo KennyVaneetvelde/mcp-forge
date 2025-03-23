@@ -1,0 +1,21 @@
+"""Interfaces for resource abstractions."""
+from abc import ABC, abstractmethod
+from typing import Optional, ClassVar, Dict, Any, List
+
+
+class Resource(ABC):
+    """Abstract base class for all resources."""
+    name: ClassVar[str]
+    description: ClassVar[str]
+    uri: ClassVar[str]
+    mime_type: ClassVar[Optional[str]] = None
+    params: ClassVar[List[str]] = []  # List of parameter names from URI pattern, e.g. ['user_id']
+
+    @abstractmethod
+    async def read(self, **kwargs: Any) -> str:
+        """Read the resource content.
+
+        For dynamic resources, the URI parameters are passed as keyword arguments.
+        For example, if uri = "users://{user_id}/profile", then read(user_id="123") will be called.
+        """
+        pass

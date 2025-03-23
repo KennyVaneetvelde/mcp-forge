@@ -1,0 +1,5 @@
+"""Resource exports."""
+from .hello_world import HelloWorldResource
+from .user_profile import UserProfileResource
+
+__all__ = ["HelloWorldResource", "UserProfileResource"]

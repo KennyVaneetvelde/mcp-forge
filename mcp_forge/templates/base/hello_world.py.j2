@@ -1,0 +1,129 @@
+"""Hello World tool implementation."""
+from enum import Enum
+from typing import Optional, Dict, Any
+from datetime import datetime
+
+from pydantic import Field, BaseModel, ConfigDict
+
+from ..interfaces.tool import Tool, BaseToolInput, ToolResponse, ToolContent
+
+
+class Language(str, Enum):
+    """Supported languages for greeting."""
+    ENGLISH = "english"
+    SPANISH = "spanish"
+    FRENCH = "french"
+    GERMAN = "german"
+
+    @classmethod
+    def get_schema(cls) -> Dict[str, Any]:
+        """Get JSON schema for the enum."""
+        return {
+            "type": "string",
+            "enum": [v.value for v in cls],
+            "description": "The language to use for the greeting",
+            "examples": ["english", "spanish"]
+        }
+
+
+class HelloWorldInput(BaseToolInput):
+    """Input schema for the HelloWorld tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {
+                "name": "Alice",
+                "language": "english"
+            },
+            {
+                "name": "Juan",
+                "language": "spanish"
+            }
+        ]
+    })
+
+    name: str = Field(
+        description="The name of the person to greet",
+        examples=["Alice", "Bob"],
+        min_length=1,
+        max_length=100
+    )
+    language: Language = Field(
+        default=Language.ENGLISH,
+        description="The language to use for the greeting",
+        examples=["english", "spanish", "french", "german"]
+    )
+
+
+class HelloWorldOutput(BaseModel):
+    """Output schema for the HelloWorld tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {
+                "message": "Hello, Alice!",
+                "timestamp": "2024-03-23T10:30:00Z"
+            }
+        ]
+    })
+
+    message: str = Field(
+        description="The greeting message in the requested language"
+    )
+    timestamp: str = Field(
+        description="ISO formatted timestamp of when the greeting was generated"
+    )
+
+
+class HelloWorldTool(Tool):
+    """A simple Hello World tool to demonstrate the MCP server functionality."""
+    name = "HelloWorld"
+    description = "A simple greeting tool that says hello to the provided name in different languages"
+    input_model = HelloWorldInput
+    output_model = HelloWorldOutput
+
+    # Define greetings in different languages
+    GREETINGS = {
+        Language.ENGLISH: "Hello",
+        Language.SPANISH: "Hola",
+        Language.FRENCH: "Bonjour",
+        Language.GERMAN: "Hallo"
+    }
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Get the JSON schema for this tool."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input": self.input_model.model_json_schema(),
+            "output": self.output_model.model_json_schema()
+        }
+
+    async def execute(self, input_data: HelloWorldInput) -> ToolResponse:
+        """Execute the hello world tool.
+
+        Args:
+            input_data: The validated input for the tool
+
+        Returns:
+            A response containing the greeting message
+        """
+        # Get the appropriate greeting
+        greeting = self.GREETINGS.get(input_data.language, self.GREETINGS[Language.ENGLISH])
+
+        # Create the response message
+        message = f"{greeting}, {input_data.name}!"
+
+        # Format the response using our output model
+        output = HelloWorldOutput(
+            message=message,
+            timestamp=datetime.now().isoformat()
+        )
+
+        # Return the formatted response
+        return ToolResponse(
+            content=[
+                ToolContent(
+                    type="text",
+                    text=str(output.model_dump())
+                )
+            ]
+        )

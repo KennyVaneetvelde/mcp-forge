@@ -1,0 +1,18 @@
+[project]
+name = "{{ config.project_name }}"
+version = "0.1.0"
+description = "{{ config.description }}"
+authors = []
+requires-python = "{{ config.python_version }}"
+dependencies = [
+    "mcp[cli]",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+{{ config.project_name }} = "{{ config.package_name }}.server:main"

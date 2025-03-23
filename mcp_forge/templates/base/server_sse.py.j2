@@ -1,0 +1,96 @@
+"""{{ config.project_name }} MCP Server implementation with SSE transport."""
+
+from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from mcp.server.sse import SseServerTransport
+from starlette.requests import Request
+from starlette.routing import Mount, Route
+from mcp.server import Server
+import uvicorn
+from typing import List, Dict, Any
+
+from {{ config.package_name }}.services.tool_service import ToolService
+from {{ config.package_name }}.services.resource_service import ResourceService
+from {{ config.package_name }}.interfaces.tool import Tool
+from {{ config.package_name }}.interfaces.resource import Resource
+from {{ config.package_name }}.tools import HelloWorldTool
+from {{ config.package_name }}.resources import HelloWorldResource, UserProfileResource
+
+
+def get_available_tools() -> List[Tool]:
+    """Get list of all available tools."""
+    return [
+        HelloWorldTool(),
+        # Add more tools here as they are created
+    ]
+
+
+def get_available_resources() -> List[Resource]:
+    """Get list of all available resources."""
+    return [
+        HelloWorldResource(),
+        UserProfileResource(),
+        # Add more resources here as they are created
+    ]
+
+
+# Initialize FastMCP server with SSE
+mcp = FastMCP("{{ config.project_name }}")
+tool_service = ToolService()
+resource_service = ResourceService()
+
+
+def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
+    """Create a Starlette application that can serve the provided mcp server with SSE."""
+    sse = SseServerTransport("/messages/")
+
+    async def handle_sse(request: Request) -> None:
+        async with sse.connect_sse(
+                request.scope,
+                request.receive,
+                request._send,  # noqa: SLF001
+        ) as (read_stream, write_stream):
+            await mcp_server.run(
+                read_stream,
+                write_stream,
+                mcp_server.create_initialization_options(),
+            )
+
+    return Starlette(
+        debug=debug,
+        routes=[
+            Route("/sse", endpoint=handle_sse),
+            Mount("/messages/", app=sse.handle_post_message),
+        ],
+    )
+
+
+def main():
+    """Entry point for the server."""
+    # Register all tools and their MCP handlers
+    tool_service.register_tools(get_available_tools())
+    tool_service.register_mcp_handlers(mcp)
+
+    # Register all resources and their MCP handlers
+    resource_service.register_resources(get_available_resources())
+    resource_service.register_mcp_handlers(mcp)
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run MCP SSE-based server')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
+    parser.add_argument('--port', type=int, default=8080, help='Port to listen on')
+    args = parser.parse_args()
+
+    # Get the MCP server
+    mcp_server = mcp._mcp_server  # noqa: WPS437
+
+    # Bind SSE request handling to MCP server
+    starlette_app = create_starlette_app(mcp_server, debug=True)
+
+    # Run the server
+    uvicorn.run(starlette_app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
