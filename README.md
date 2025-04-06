@@ -4,6 +4,14 @@ MCP-Forge is a scaffolding tool designed to quickly bootstrap new MCP (Model Con
 
 > ⚠️ **Early Project**: This is an early version of MCP-Forge. The API, generated structure, and features might change as the MCP ecosystem evolves. Feedback and contributions are welcome!
 
+## Support Development
+
+If you find this project useful, please consider supporting its development by making a donation:
+
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](http://paypal.com/paypalme/KennyVaneetvelde)
+
+Your support helps maintain and improve the project!
+
 ## Features
 
 - Generates a complete Python project structure for an MCP server.
