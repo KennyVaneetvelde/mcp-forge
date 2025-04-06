@@ -15,10 +15,10 @@ MCP-Forge is a scaffolding tool designed to quickly bootstrap new MCP (Model Con
 
 ## Installation
 
-It's recommended to install and run `mcp-forge` using `uvx` (from `uv`), which handles temporary environments:
+It's recommended to run `mcp-forge` using `uvx` (from `uv`), which handles temporary environments:
 
 ```bash
-# Ensure uv is installed (pip install uv)
+# Ensure uv is installed
 uvx mcp-forge --help
 ```
 
