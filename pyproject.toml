@@ -1,6 +1,6 @@
 [project]
 name = "mcp-forge"
-version = "0.2.3"
+version = "0.2.4"
 description = "Scaffolding tool for Model Context Protocol (MCP) servers"
 authors = []
 requires-python = ">=3.10"
