@@ -1,0 +1,311 @@
+"""Developer guide and examples for {{ config.project_name }} MCP client.
+
+This file demonstrates how to use the MCP client with both SSE and stdio transports.
+It provides examples of common operations and best practices for interacting with the server.
+"""
+
+import asyncio
+import json
+import os
+import signal
+import subprocess
+import sys
+import warnings
+from contextlib import AsyncExitStack
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.sse import sse_client
+from mcp.client.stdio import stdio_client
+from rich.console import Console
+from rich.panel import Panel
+from rich.json import JSON
+from rich.text import Text
+from rich.markdown import Markdown
+
+
+# Suppress ResourceWarning for unclosed transports
+# This is a workaround for known asyncio issues on Windows
+warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*")
+
+console = Console()
+exit_stack = AsyncExitStack()
+
+# Store created subprocess objects for proper cleanup
+subprocesses = []
+
+def format_result(result, tool_name: str):
+    """Format a tool result for display in a developer-friendly way."""
+    if result.isError:
+        return Panel(
+            Text(result.content[0].text, style="red"),
+            title=f"[red]Error in {tool_name}[/red]",
+            border_style="red"
+        )
+
+    # Parse the JSON string from the text content
+    try:
+        json_data = json.loads(result.content[0].text.replace("'", '"'))
+        return Panel(
+            JSON(json.dumps(json_data, indent=2)),
+            title=f"[green]{tool_name} Result[/green]",
+            border_style="green"
+        )
+    except json.JSONDecodeError:
+        return Panel(
+            Text(result.content[0].text),
+            title=f"[yellow]{tool_name} Result (Raw)[/yellow]",
+            border_style="yellow"
+        )
+
+
+async def demonstrate_tool_usage(session: ClientSession):
+    """Demonstrate how to use various tools with different parameters."""
+    console.print("\n[bold yellow]Demonstrating Tool Usage[/bold yellow]")
+
+    # Example 1: Basic tool usage
+    console.print("\n[bold]Example 1: Basic HelloWorld Tool[/bold]")
+    try:
+        result = await session.call_tool(
+            "HelloWorld",
+            {"name": "Developer", "language": "english"}
+        )
+        console.print(format_result(result, "HelloWorld"))
+    except Exception as e:
+        console.print("[red]Error calling HelloWorld tool:[/red]")
+        console.print(f"[red]{str(e)}[/red]")
+
+    # Example 2: Tool with default parameters
+    console.print("\n[bold]Example 2: HelloWorld with Default Language[/bold]")
+    try:
+        result = await session.call_tool(
+            "HelloWorld",
+            {"name": "World"}  # language will default to english
+        )
+        console.print(format_result(result, "HelloWorld"))
+    except Exception as e:
+        console.print("[red]Error calling HelloWorld tool (default lang):[/red]")
+        console.print(f"[red]{str(e)}[/red]")
+
+
+async def demonstrate_resource_usage(session: ClientSession):
+    """Demonstrate how to access different types of resources."""
+    console.print("\n[bold yellow]Demonstrating Resource Access[/bold yellow]")
+
+    # Example 1: Accessing a static resource
+    console.print("\n[bold]Example 1: Reading HelloWorld Resource[/bold]")
+    try:
+        result = await session.read_resource("hello://world")
+        if result.contents and len(result.contents) > 0:
+            content = result.contents[0].text
+            console.print(Panel(
+                Text(content),
+                title="[green]HelloWorld Resource Content[/green]",
+                border_style="green"
+            ))
+        else:
+            console.print("[red]No content received from resource[/red]")
+    except Exception as e:
+        console.print("[red]Error reading HelloWorld resource:[/red]")
+        console.print(f"[red]{str(e)}[/red]")
+
+    # Example 2: Accessing a dynamic resource
+    console.print("\n[bold]Example 2: Reading User Profile Resource[/bold]")
+    try:
+        result = await session.read_resource("users://123/profile")
+        if result.contents and len(result.contents) > 0:
+            content = result.contents[0].text
+            console.print(Panel(
+                Text(content),
+                title="[green]UserProfile Resource Content[/green]",
+                border_style="green"
+            ))
+        else:
+            console.print("[red]No content received from resource[/red]")
+    except Exception as e:
+        console.print("[red]Error reading UserProfile resource:[/red]")
+        console.print(f"[red]{str(e)}[/red]")
+
+
+async def list_available_tools(session: ClientSession):
+    """List all available tools and their capabilities."""
+    console.print("\n[bold cyan]Listing Available Tools[/bold cyan]")
+    try:
+        response = await session.list_tools()
+        tools = response.tools
+
+        # Display tools in a developer-friendly format
+        tool_info = []
+        for tool in tools:
+            tool_info.append(f"• [cyan]{tool.name}[/cyan]")
+            tool_info.append(f"  Description: {tool.description}")
+            tool_info.append("  Parameters:")
+            if hasattr(tool, 'inputSchema') and isinstance(tool.inputSchema, dict):
+                for param, details in tool.inputSchema.get("properties", {}).items():
+                    tool_info.append(f"    - {param}: {details.get('description', 'No description')}")
+                    if "examples" in details:
+                        tool_info.append(f"      Examples: {', '.join(details['examples'])}")
+
+        console.print(Panel(
+            "\n".join(tool_info),
+            title="[bold]Available Tools[/bold]",
+            border_style="blue"
+        ))
+    except Exception as e:
+        console.print("[red]Error listing tools:[/red]")
+        console.print(f"[red]{str(e)}[/red]")
+
+
+async def list_available_resources(session: ClientSession):
+    """List all available resources and their access patterns."""
+    console.print("\n[bold magenta]Listing Available Resources[/bold magenta]")
+    try:
+        response = await session.list_resources()
+        resources = response.resources
+
+        resource_info = []
+        for resource in resources:
+            if isinstance(resource, str):
+                resource_info.append(f"• [magenta]{resource}[/magenta]")
+            else:
+                resource_info.append(f"• [magenta]{resource.uri}[/magenta]")
+                if resource.mimeType:
+                    resource_info.append(f"  MIME Type: {resource.mimeType}")
+
+        console.print(Panel(
+            "\n".join(resource_info),
+            title="[bold]Available Resources[/bold]",
+            border_style="magenta"
+        ))
+    except Exception as e:
+        console.print("[red]Error listing resources:[/red]")
+        console.print(f"[red]{str(e)}[/red]")
+
+
+async def demonstrate_sse_usage():
+    """Demonstrate usage with SSE transport."""
+    console.print(Markdown("\n## Using SSE Transport"))
+    console.print(Markdown("SSE transport is ideal for web applications and real-time updates."))
+
+    # Use 127.0.0.1 (localhost) for client connections
+    # 0.0.0.0 is used for server binding but isn't a valid destination address for clients
+    server_url = "http://127.0.0.1:6969/sse"
+    console.print(f"[bold]Connecting to SSE server at {server_url}...[/bold]")
+
+    try:
+        # Use the global exit stack to ensure proper cleanup
+        read_stream, write_stream = await exit_stack.enter_async_context(sse_client(url=server_url))
+        session = await exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
+        await session.initialize()
+        await list_available_tools(session)
+        await list_available_resources(session)
+        await demonstrate_tool_usage(session)
+        await demonstrate_resource_usage(session)
+    except Exception as e:
+        console.print(Panel(
+            f"[red]Failed to connect or communicate with SSE server: {str(e)}[/red]",
+            title="[red]SSE Connection/Communication Error[/red]",
+            border_style="red"
+        ))
+
+
+async def demonstrate_stdio_usage():
+    """Demonstrate usage with stdio transport."""
+    console.print(Markdown("\n## Using Stdio Transport"))
+    console.print(Markdown("Stdio transport is ideal for local development and debugging."))
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=["run", "python", "-m", "{{ config.package_name }}.server_stdio"],
+        env=None
+    )
+    console.print(f"[bold]Attempting to start stdio server with command:[/bold] {' '.join([server_params.command] + server_params.args)}")
+
+    try:
+        # Use the global exit stack to ensure proper cleanup
+        stdio, write = await exit_stack.enter_async_context(stdio_client(server_params))
+        session = await exit_stack.enter_async_context(ClientSession(stdio, write))
+
+        # Store subprocess info for cleanup
+        if hasattr(stdio, '_process') and stdio._process:
+            subprocesses.append(stdio._process)
+
+        await session.initialize()
+        await list_available_tools(session)
+        await list_available_resources(session)
+        await demonstrate_tool_usage(session)
+        await demonstrate_resource_usage(session)
+    except Exception as e:
+        console.print(Panel(
+            f"[red]Failed to connect or communicate with stdio server: {str(e)}[/red]",
+            title="[red]Stdio Connection/Communication Error[/red]",
+            border_style="red"
+        ))
+
+
+async def cleanup():
+    """Properly clean up all resources."""
+    try:
+        # Close all resources in the exit stack
+        await exit_stack.aclose()
+
+        # Explicitly terminate any child processes
+        for proc in subprocesses:
+            if proc and hasattr(proc, 'terminate'):
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+
+        # Force kill any remaining Python processes if this is the main process
+        if sys.platform == 'win32':
+            # Windows-specific cleanup for Python processes
+            try:
+                # This is a more aggressive approach but helps with cleanup on Windows
+                subprocess.run(["taskkill", "/F", "/IM", "python.exe", "/T"],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              creationflags=subprocess.CREATE_NO_WINDOW)
+            except Exception:
+                pass
+
+        # Give resources time to clean up
+        await asyncio.sleep(1.0)
+
+        # Explicitly collect garbage to help with finalization
+        import gc
+        gc.collect()
+
+    except Exception as e:
+        console.print(f"[yellow]Warning during cleanup: {str(e)}[/yellow]")
+
+
+async def main():
+    """Main entry point demonstrating both SSE and stdio client usage."""
+    try:
+        # Set up signal handlers for graceful shutdown
+        if sys.platform != 'win32':
+            # Not supported on Windows
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                asyncio.get_running_loop().add_signal_handler(
+                    sig, lambda: asyncio.create_task(cleanup())
+                )
+
+        console.print(Markdown("# {{ config.project_name }} Client Examples"))
+
+        # Try SSE first
+        await demonstrate_sse_usage()
+
+        # Then try stdio
+        await demonstrate_stdio_usage()
+
+    finally:
+        # Ensure resources are cleaned up
+        await cleanup()
+
+
+if __name__ == "__main__":
+    # Use asyncio policy that's appropriate for the platform
+    if sys.platform == 'win32':
+        # On Windows, use the ProactorEventLoop by default
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+    asyncio.run(main())

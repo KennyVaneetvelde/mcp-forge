@@ -65,8 +65,7 @@ def create_new_server(project_name: str, description: str, python_version: str) 
         "resources/__init__.py.j2": project_dir / config.package_name / "resources" / "__init__.py",
         "resources/hello_world.py.j2": project_dir / config.package_name / "resources" / "hello_world.py",
         "resources/user_profile.py.j2": project_dir / config.package_name / "resources" / "user_profile.py",
-        "test_client_stdio.py.j2": project_dir / "test_client_stdio.py",
-        "test_client_sse.py.j2": project_dir / "test_client_sse.py",
+        "test_client.py.j2": project_dir / "test_client.py",
         "README.md.j2": project_dir / "README.md",
     }
 

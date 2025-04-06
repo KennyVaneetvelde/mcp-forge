@@ -8,6 +8,8 @@ from starlette.routing import Mount, Route
 from mcp.server import Server
 import uvicorn
 from typing import List, Dict, Any
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 from {{ config.package_name }}.services.tool_service import ToolService
 from {{ config.package_name }}.services.resource_service import ResourceService
@@ -21,7 +23,6 @@ def get_available_tools() -> List[Tool]:
     """Get list of all available tools."""
     return [
         HelloWorldTool(),
-        # Add more tools here as they are created
     ]
 
 
@@ -30,7 +31,6 @@ def get_available_resources() -> List[Resource]:
     return [
         HelloWorldResource(),
         UserProfileResource(),
-        # Add more resources here as they are created
     ]
 
 
@@ -56,12 +56,23 @@ def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlett
                 mcp_server.create_initialization_options(),
             )
 
+    middleware = [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+            allow_credentials=True,
+        )
+    ]
+
     return Starlette(
         debug=debug,
         routes=[
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
+        middleware=middleware
     )
 
 
@@ -79,7 +90,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Run MCP SSE-based server')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
-    parser.add_argument('--port', type=int, default=8080, help='Port to listen on')
+    parser.add_argument('--port', type=int, default=6969, help='Port to listen on')
     args = parser.parse_args()
 
     # Get the MCP server

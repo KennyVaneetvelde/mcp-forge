@@ -1,7 +1,7 @@
 """Hello World resource implementation."""
 from datetime import datetime
 
-from ..interfaces.resource import Resource, ResourceResponse, ResourceContent
+from ..interfaces.resource import Resource
 
 
 class HelloWorldResource(Resource):
@@ -11,19 +11,10 @@ class HelloWorldResource(Resource):
     uri = "hello://world"
     mime_type = "text/plain"
 
-    async def read(self) -> ResourceResponse:
+    async def read(self) -> str:
         """Read the hello world resource."""
         # Create the response message
         message = f"Hello from the HelloWorldResource! Current time: {datetime.now().isoformat()}"
 
         # Return the formatted response
-        return ResourceResponse(
-            contents=[
-                ResourceContent(
-                    type="text",
-                    text=message,
-                    uri=self.uri,
-                    mime_type=self.mime_type
-                )
-            ]
-        )
+        return message

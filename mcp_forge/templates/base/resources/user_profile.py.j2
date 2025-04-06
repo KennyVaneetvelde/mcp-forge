@@ -1,7 +1,7 @@
 """User Profile resource implementation."""
 from datetime import datetime
 
-from ..interfaces.resource import Resource, ResourceResponse, ResourceContent
+from ..interfaces.resource import Resource
 
 
 class UserProfileResource(Resource):
@@ -11,7 +11,7 @@ class UserProfileResource(Resource):
     uri = "users://{user_id}/profile"
     mime_type = "text/plain"
 
-    async def read(self, user_id: str = "unknown") -> ResourceResponse:
+    async def read(self, user_id: str = "unknown") -> str:
         """Read the user profile resource.
 
         Args:
@@ -20,17 +20,5 @@ class UserProfileResource(Resource):
         # Create the response message
         message = f"User Profile for user {user_id}\nName: User {user_id}\nEmail: user{user_id}@example.com\nJoined: {datetime.now().strftime('%Y-%m-%d')}"
 
-        # Create the resource URI with the actual user_id
-        resource_uri = self.uri.format(user_id=user_id)
-
         # Return the formatted response
-        return ResourceResponse(
-            contents=[
-                ResourceContent(
-                    type="text",
-                    text=message,
-                    uri=resource_uri,
-                    mime_type=self.mime_type
-                )
-            ]
-        )
+        return message
