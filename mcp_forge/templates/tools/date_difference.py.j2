@@ -1,0 +1,70 @@
+"""Tool for calculating the difference between two dates."""
+from typing import Optional, Dict, Any
+from datetime import datetime, date
+
+from pydantic import Field, BaseModel, ConfigDict
+
+from ..interfaces.tool import Tool, BaseToolInput, ToolResponse, ToolContent
+
+
+class DateDifferenceInput(BaseToolInput):
+    """Input schema for the DateDifference tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"date1": "2024-01-10", "date2": "2024-01-20"},
+            {"date1": "2023-12-01", "date2": "2024-02-01"}
+        ]
+    })
+
+    date1: date = Field(
+        description="The first date in ISO format (YYYY-MM-DD)",
+        examples=["2024-01-10"]
+    )
+    date2: date = Field(
+        description="The second date in ISO format (YYYY-MM-DD)",
+        examples=["2024-01-20"]
+    )
+
+
+class DateDifferenceOutput(BaseModel):
+    """Output schema for the DateDifference tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"days_difference": 10},
+            {"days_difference": 62}
+        ]
+    })
+
+    days_difference: int = Field(
+        description="The difference between the two dates in days"
+    )
+
+
+class DateDifferenceTool(Tool):
+    """Tool that calculates the difference between two dates."""
+    name = "DateDifference"
+    description = "Calculates the difference in days between two ISO-formatted dates (date2 - date1)"
+    input_model = DateDifferenceInput
+    output_model = DateDifferenceOutput
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Get the JSON schema for this tool."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input": self.input_model.model_json_schema(),
+            "output": self.output_model.model_json_schema()
+        }
+
+    async def execute(self, input_data: DateDifferenceInput) -> ToolResponse:
+        """Execute the date difference tool.
+
+        Args:
+            input_data: The validated input for the tool
+
+        Returns:
+            A response containing the difference in days
+        """
+        delta = input_data.date2 - input_data.date1
+        output = DateDifferenceOutput(days_difference=delta.days)
+        return ToolResponse.from_model(output)

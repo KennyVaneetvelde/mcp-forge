@@ -1,0 +1,60 @@
+"""Tool for getting the current time."""
+from typing import Optional, Dict, Any
+from datetime import datetime
+
+from pydantic import Field, BaseModel, ConfigDict
+
+from ..interfaces.tool import Tool, BaseToolInput, ToolResponse, ToolContent
+
+
+# No specific input is needed for this tool, so we can reuse BaseToolInput
+# or create a simple one if needed for consistency or future extension.
+class CurrentTimeInput(BaseToolInput):
+    """Input schema for the CurrentTime tool (currently empty)."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [{}]
+    })
+    pass  # No fields needed
+
+
+class CurrentTimeOutput(BaseModel):
+    """Output schema for the CurrentTime tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"current_iso_time": "2024-03-23T12:00:00.123456"}
+        ]
+    })
+
+    current_iso_time: datetime = Field(
+        description="The current time in ISO 8601 format"
+    )
+
+
+class CurrentTimeTool(Tool):
+    """Tool that returns the current time in ISO format."""
+    name = "CurrentTime"
+    description = "Returns the current time in ISO 8601 format"
+    input_model = CurrentTimeInput
+    output_model = CurrentTimeOutput
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Get the JSON schema for this tool."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input": self.input_model.model_json_schema(),
+            "output": self.output_model.model_json_schema()
+        }
+
+    async def execute(self, input_data: CurrentTimeInput) -> ToolResponse:
+        """Execute the current time tool.
+
+        Args:
+            input_data: The validated input for the tool (unused)
+
+        Returns:
+            A response containing the current time
+        """
+        now_dt = datetime.now()
+        output = CurrentTimeOutput(current_iso_time=now_dt)
+        return ToolResponse.from_model(output)

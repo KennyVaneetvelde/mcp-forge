@@ -27,7 +27,7 @@ def create_new_server(project_name: str, description: str, python_version: str) 
     config = ServerConfig.from_inputs(project_name, description, python_version)
 
     # Get template directory
-    template_dir = Path(__file__).parent.parent / "templates" / "base"
+    template_dir = Path(__file__).parent.parent / "templates"
     env = Environment(loader=FileSystemLoader(str(template_dir)))
 
     # Create project directory using absolute path
@@ -50,23 +50,38 @@ def create_new_server(project_name: str, description: str, python_version: str) 
 
     # Generate files from templates
     template_files = {
-        "pyproject.toml.j2": project_dir / "pyproject.toml",
-        "server_stdio.py.j2": project_dir / config.package_name / "server_stdio.py",
-        "server_sse.py.j2": project_dir / config.package_name / "server_sse.py",
-        "tool_service.py.j2": project_dir / config.package_name / "services" / "tool_service.py",
+        # Root project files
+        "root/pyproject.toml.j2": project_dir / "pyproject.toml",
+        "root/README.md.j2": project_dir / "README.md",
+        "root/demo_tools.py.j2": project_dir / "demo_tools.py",
+
+        # Core server files
+        "core/server_stdio.py.j2": project_dir / config.package_name / "server_stdio.py",
+        "core/server_sse.py.j2": project_dir / config.package_name / "server_sse.py",
+        "core/__init__.py.j2": project_dir / config.package_name / "__init__.py",
+
+        # Services
+        "services/tool_service.py.j2": project_dir / config.package_name / "services" / "tool_service.py",
         "services/resource_service.py.j2": project_dir / config.package_name / "services" / "resource_service.py",
-        "tool.py.j2": project_dir / config.package_name / "interfaces" / "tool.py",
-        "resource.py.j2": project_dir / config.package_name / "interfaces" / "resource.py",
-        "__init__.py.j2": project_dir / config.package_name / "__init__.py",
-        "interfaces/__init__.py.j2": project_dir / config.package_name / "interfaces" / "__init__.py",
         "services/__init__.py.j2": project_dir / config.package_name / "services" / "__init__.py",
-        "tools_init.py.j2": project_dir / config.package_name / "tools" / "__init__.py",
-        "hello_world.py.j2": project_dir / config.package_name / "tools" / "hello_world.py",
+
+        # Interfaces
+        "interfaces/tool.py.j2": project_dir / config.package_name / "interfaces" / "tool.py",
+        "interfaces/resource.py.j2": project_dir / config.package_name / "interfaces" / "resource.py",
+        "interfaces/__init__.py.j2": project_dir / config.package_name / "interfaces" / "__init__.py",
+
+        # Tools
+        "tools/__init__.py.j2": project_dir / config.package_name / "tools" / "__init__.py",
+        "tools/add_numbers.py.j2": project_dir / config.package_name / "tools" / "add_numbers.py",
+        "tools/date_difference.py.j2": project_dir / config.package_name / "tools" / "date_difference.py",
+        "tools/reverse_string.py.j2": project_dir / config.package_name / "tools" / "reverse_string.py",
+        "tools/current_time.py.j2": project_dir / config.package_name / "tools" / "current_time.py",
+        "tools/random_number.py.j2": project_dir / config.package_name / "tools" / "random_number.py",
+
+        # Resources
         "resources/__init__.py.j2": project_dir / config.package_name / "resources" / "__init__.py",
         "resources/hello_world.py.j2": project_dir / config.package_name / "resources" / "hello_world.py",
         "resources/user_profile.py.j2": project_dir / config.package_name / "resources" / "user_profile.py",
-        "test_client.py.j2": project_dir / "test_client.py",
-        "README.md.j2": project_dir / "README.md",
     }
 
     template_context = {

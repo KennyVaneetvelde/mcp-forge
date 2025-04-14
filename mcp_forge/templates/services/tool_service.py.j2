@@ -1,7 +1,9 @@
 """Service layer for managing tools."""
-from typing import Dict, List, Any, Type, cast
+from typing import Dict, List, Any, Type, cast, Optional
+import json
 from mcp.server.fastmcp import FastMCP
-from {{ config.package_name }}.interfaces.tool import Tool, ToolResponse, BaseToolInput
+from {{ config.package_name }}.interfaces.tool import Tool, ToolResponse, BaseToolInput, ToolContent
+from pydantic import Field
 
 
 class ToolService:
@@ -47,6 +49,44 @@ class ToolService:
         # Execute the tool with validated input
         return await tool.execute(input_model)
 
+    def _process_tool_content(self, content: ToolContent) -> Any:
+        """Process a ToolContent object based on its type.
+
+        Args:
+            content: The ToolContent to process
+
+        Returns:
+            The appropriate representation of the content based on its type
+        """
+        if content.type == "text":
+            return content.text
+        elif content.type == "json" and content.json_data is not None:
+            return content.json_data
+        else:
+            # Default to returning whatever is available
+            return content.text or content.json_data or {}
+
+    def _serialize_response(self, response: ToolResponse) -> Any:
+        """Serialize a ToolResponse to return to the client.
+
+        This handles the actual response serialization based on content types.
+
+        Args:
+            response: The ToolResponse to serialize
+
+        Returns:
+            The serialized response
+        """
+        if not response.content:
+            return {}
+
+        # If there's only one content item, return it directly
+        if len(response.content) == 1:
+            return self._process_tool_content(response.content[0])
+
+        # If there are multiple content items, return them as a list
+        return [self._process_tool_content(content) for content in response.content]
+
     def register_mcp_handlers(self, mcp: FastMCP) -> None:
         """Register all tools as MCP handlers."""
         for tool in self._tools.values():
@@ -54,8 +94,9 @@ class ToolService:
             schema = tool.input_model.model_json_schema()
             properties = schema.get("properties", {})
 
-            # Create a function signature that matches the schema
+            # Create a function signature that matches the schema with parameter descriptions
             params = []
+
             for name, info in properties.items():
                 type_hint = "str"  # Default to str
                 if info.get("type") == "integer":
@@ -66,19 +107,22 @@ class ToolService:
                     type_hint = "bool"
 
                 default = info.get("default", "...")
+                description = info.get("description", "")
+
+                # Create parameter string for function definition with Field for descriptions
                 if default == "...":
-                    params.append(f"{name}: {type_hint}")
+                    params.append(f"{name}: {type_hint} = Field(description='{description}')")
                 else:
-                    params.append(f"{name}: {type_hint} = {repr(default)}")
+                    params.append(f"{name}: {type_hint} = Field(description='{description}', default={repr(default)})")
 
             # Create the function definition
             fn_def = f"async def {tool.name}({', '.join(params)}):\n"
             fn_def += f'    """{tool.description}"""\n'
             fn_def += "    result = await self.execute_tool(tool.name, locals())\n"
-            fn_def += "    return result.content[0].text"
+            fn_def += "    return self._serialize_response(result)"
 
             # Create the function
-            namespace = {"self": self, "tool": tool}
+            namespace = {"self": self, "tool": tool, "Field": Field}
             exec(fn_def, namespace)
             handler = namespace[tool.name]
 

@@ -1,0 +1,64 @@
+"""Tool for reversing a string."""
+from typing import Optional, Dict, Any
+
+from pydantic import Field, BaseModel, ConfigDict
+
+from ..interfaces.tool import Tool, BaseToolInput, ToolResponse, ToolContent
+
+
+class ReverseStringInput(BaseToolInput):
+    """Input schema for the ReverseString tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"text_to_reverse": "hello world"}
+        ]
+    })
+
+    text_to_reverse: str = Field(
+        description="The string to be reversed",
+        examples=["madam", "openai"],
+        min_length=1
+    )
+
+
+class ReverseStringOutput(BaseModel):
+    """Output schema for the ReverseString tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"reversed_text": "dlrow olleh"}
+        ]
+    })
+
+    reversed_text: str = Field(
+        description="The reversed string"
+    )
+
+
+class ReverseStringTool(Tool):
+    """Tool that reverses a given string."""
+    name = "ReverseString"
+    description = "Reverses the provided input string"
+    input_model = ReverseStringInput
+    output_model = ReverseStringOutput
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Get the JSON schema for this tool."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input": self.input_model.model_json_schema(),
+            "output": self.output_model.model_json_schema()
+        }
+
+    async def execute(self, input_data: ReverseStringInput) -> ToolResponse:
+        """Execute the reverse string tool.
+
+        Args:
+            input_data: The validated input for the tool
+
+        Returns:
+            A response containing the reversed string
+        """
+        reversed_string = input_data.text_to_reverse[::-1]
+        output = ReverseStringOutput(reversed_text=reversed_string)
+        return ToolResponse.from_model(output)

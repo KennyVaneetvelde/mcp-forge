@@ -18,7 +18,6 @@ Your support helps maintain and improve the project!
 - Includes separate server entry points for SSE and stdio transports.
 - Provides example `HelloWorld` tool and `HelloWorld`/`UserProfile` resources.
 - Sets up Pydantic models for clear input/output schemas.
-- Includes a basic test client (`test_client.py`) demonstrating server interaction.
 - Uses `uv` for dependency management and task running.
 
 ## Installation
@@ -93,7 +92,6 @@ my-awesome-server/
 │       ├── __init__.py
 │       └── hello_world.py       # Example tool with input/output schemas
 ├── pyproject.toml               # Project metadata and dependencies (using Hatch)
-├── test_client.py               # Example client script to test server functionality
 └── README.md                    # README template for the generated project
 ```
 
@@ -115,11 +113,6 @@ my-awesome-server/
 
     # OR Run stdio server
     # uv run python -m my_awesome_server.server_stdio
-    ```
-4.  In a **separate terminal**, run the test client:
-    ```bash
-    # Make sure you are in the project directory (my-awesome-server)
-    uv run test_client.py
     ```
 
 ## About MCP

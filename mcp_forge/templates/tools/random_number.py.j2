@@ -1,0 +1,77 @@
+"""Tool for generating a random number within a specified range."""
+import random
+from typing import Optional, Dict, Any
+
+from pydantic import Field, BaseModel, ConfigDict, model_validator
+
+from ..interfaces.tool import Tool, BaseToolInput, ToolResponse, ToolContent
+
+
+class RandomNumberInput(BaseToolInput):
+    """Input schema for the RandomNumber tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"min_value": 1, "max_value": 10},
+            {"min_value": -50, "max_value": 50}
+        ]
+    })
+
+    min_value: int = Field(
+        default=0,
+        description="The minimum possible value (inclusive)",
+        examples=[1, -50]
+    )
+    max_value: int = Field(
+        default=100,
+        description="The maximum possible value (inclusive)",
+        examples=[10, 50]
+    )
+
+    @model_validator(mode='after')
+    def check_min_max(self) -> 'RandomNumberInput':
+        if self.min_value > self.max_value:
+            raise ValueError("min_value cannot be greater than max_value")
+        return self
+
+
+class RandomNumberOutput(BaseModel):
+    """Output schema for the RandomNumber tool."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"random_number": 7}
+        ]
+    })
+
+    random_number: int = Field(
+        description="A random integer within the specified range"
+    )
+
+
+class RandomNumberTool(Tool):
+    """Tool that generates a random integer within a given range."""
+    name = "RandomNumber"
+    description = "Generates a random integer between min_value and max_value (inclusive)"
+    input_model = RandomNumberInput
+    output_model = RandomNumberOutput
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Get the JSON schema for this tool."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input": self.input_model.model_json_schema(),
+            "output": self.output_model.model_json_schema()
+        }
+
+    async def execute(self, input_data: RandomNumberInput) -> ToolResponse:
+        """Execute the random number tool.
+
+        Args:
+            input_data: The validated input for the tool
+
+        Returns:
+            A response containing the random number
+        """
+        random_int = random.randint(input_data.min_value, input_data.max_value)
+        output = RandomNumberOutput(random_number=random_int)
+        return ToolResponse.from_model(output)
