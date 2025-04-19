@@ -56,6 +56,7 @@ def create_new_server(project_name: str, description: str, python_version: str) 
         "root/demo_tools.py.j2": project_dir / "demo_tools.py",
 
         # Core server files
+        "core/server.py.j2": project_dir / config.package_name / "server.py",
         "core/server_stdio.py.j2": project_dir / config.package_name / "server_stdio.py",
         "core/server_sse.py.j2": project_dir / config.package_name / "server_sse.py",
         "core/__init__.py.j2": project_dir / config.package_name / "__init__.py",

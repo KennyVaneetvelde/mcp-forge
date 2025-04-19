@@ -15,8 +15,8 @@ Your support helps maintain and improve the project!
 ## Features
 
 - Generates a complete Python project structure for an MCP server.
-- Includes separate server entry points for SSE and stdio transports.
-- Provides example `HelloWorld` tool and `HelloWorld`/`UserProfile` resources.
+- Provides a unified server entry point with required `--mode` parameter to select between SSE and stdio transports.
+- Includes example tools (AddNumbers, DateDifference, etc.) and resources (HelloWorld, UserProfile).
 - Sets up Pydantic models for clear input/output schemas.
 - Uses `uv` for dependency management and task running.
 
@@ -74,8 +74,9 @@ MCP-Forge creates a project with the following structure:
 my-awesome-server/
 ├── my_awesome_server/           # Python package for your server code
 │   ├── __init__.py              # Package initialization
-│   ├── server_stdio.py          # Entry point for running the server with stdio transport
-│   ├── server_sse.py            # Entry point for running the server with SSE transport (HTTP)
+│   ├── server.py                # Unified server entry point with mode selection
+│   ├── server_stdio.py          # Implementation for stdio transport
+│   ├── server_sse.py            # Implementation for SSE transport (HTTP)
 │   ├── interfaces/              # Base classes/interfaces for tools and resources
 │   │   ├── __init__.py
 │   │   ├── resource.py
@@ -90,7 +91,11 @@ my-awesome-server/
 │   │   └── tool_service.py      # Handles tool registration and execution
 │   └── tools/                   # Implementation of tools
 │       ├── __init__.py
-│       └── hello_world.py       # Example tool with input/output schemas
+│       ├── add_numbers.py       # Example tool
+│       ├── date_difference.py   # Example tool
+│       ├── reverse_string.py    # Example tool
+│       ├── current_time.py      # Example tool
+│       └── random_number.py     # Example tool
 ├── pyproject.toml               # Project metadata and dependencies (using Hatch)
 └── README.md                    # README template for the generated project
 ```
@@ -106,13 +111,14 @@ my-awesome-server/
     uv venv
     uv pip install -e .
     ```
-3.  **Run** the server using either SSE or stdio:
+3.  **Run** the server using the command-line executable with the required `--mode` parameter:
     ```bash
-    # Run SSE server (default: http://0.0.0.0:6969)
-    uv run python -m my_awesome_server.server_sse
+    # After installation, you can use the server name as a command
+    my-awesome-server --mode=sse   # Run in SSE mode (HTTP server on 0.0.0.0:6969)
+    my-awesome-server --mode=stdio # Run in stdio mode
 
-    # OR Run stdio server
-    # uv run python -m my_awesome_server.server_stdio
+    # Or run as a Python module
+    uv run python -m my_awesome_server.server --mode=sse
     ```
 
 ## About MCP
