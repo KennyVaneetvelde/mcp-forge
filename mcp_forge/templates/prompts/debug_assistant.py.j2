@@ -1,0 +1,93 @@
+"""Debug assistant prompt implementation."""
+from typing import List
+from {{ config.package_name }}.interfaces.prompt import Prompt, PromptMessage, PromptArgument
+
+
+class DebugAssistantPrompt(Prompt):
+    """Prompt for debugging code issues."""
+    
+    @property
+    def name(self) -> str:
+        return "debug_assistant"
+    
+    @property
+    def description(self) -> str:
+        return "Help debug code errors and issues with step-by-step guidance"
+    
+    @property
+    def arguments(self) -> List[PromptArgument]:
+        return [
+            PromptArgument(
+                name="code",
+                description="The code that has issues",
+                required=True
+            ),
+            PromptArgument(
+                name="error_message",
+                description="The error message or unexpected behavior",
+                required=True
+            ),
+            PromptArgument(
+                name="expected_behavior",
+                description="What the code should do",
+                required=False,
+                default=""
+            ),
+            PromptArgument(
+                name="attempted_fixes",
+                description="What has already been tried",
+                required=False,
+                default=""
+            )
+        ]
+    
+    async def generate(self, **kwargs) -> List[PromptMessage]:
+        """Generate the debug assistant prompt."""
+        code = kwargs.get("code", "")
+        error_message = kwargs.get("error_message", "")
+        expected_behavior = kwargs.get("expected_behavior", "")
+        attempted_fixes = kwargs.get("attempted_fixes", "")
+        
+        messages = [
+            PromptMessage(
+                role="user",
+                content="I'm experiencing an issue with my code and need debugging help."
+            ),
+            PromptMessage(
+                role="user",
+                content=f"Code:\n```\n{code}\n```"
+            ),
+            PromptMessage(
+                role="user",
+                content=f"Error/Issue: {error_message}"
+            )
+        ]
+        
+        if expected_behavior:
+            messages.append(
+                PromptMessage(
+                    role="user",
+                    content=f"Expected behavior: {expected_behavior}"
+                )
+            )
+        
+        if attempted_fixes:
+            messages.append(
+                PromptMessage(
+                    role="user",
+                    content=f"Already tried: {attempted_fixes}"
+                )
+            )
+        
+        messages.extend([
+            PromptMessage(
+                role="assistant",
+                content="I'll help you debug this issue step by step."
+            ),
+            PromptMessage(
+                role="user",
+                content="Please provide:\n1. Root cause analysis\n2. Step-by-step debugging approach\n3. Potential fixes with explanations\n4. Best practices to prevent this issue\n5. Additional debugging techniques if the issue persists"
+            )
+        ])
+        
+        return messages

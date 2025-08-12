@@ -1,0 +1,49 @@
+"""Service layer for managing prompts."""
+from typing import Dict, List, Any
+from fastmcp import FastMCP
+from {{ config.package_name }}.interfaces.prompt import Prompt, PromptMessage
+
+
+class PromptService:
+    """Service for managing and executing prompts."""
+
+    def __init__(self):
+        self._prompts: Dict[str, Prompt] = {}
+
+    def register_prompt(self, prompt: Prompt) -> None:
+        """Register a new prompt."""
+        self._prompts[prompt.name] = prompt
+
+    def register_prompts(self, prompts: List[Prompt]) -> None:
+        """Register multiple prompts."""
+        for prompt in prompts:
+            self.register_prompt(prompt)
+
+    def get_prompt(self, prompt_name: str) -> Prompt:
+        """Get a prompt by name."""
+        if prompt_name not in self._prompts:
+            raise ValueError(f"Prompt not found: {prompt_name}")
+        return self._prompts[prompt_name]
+
+    async def generate_prompt(self, prompt_name: str, **kwargs) -> List[PromptMessage]:
+        """Generate a prompt with given arguments.
+        
+        Args:
+            prompt_name: The name of the prompt to generate
+            **kwargs: Arguments for the prompt
+            
+        Returns:
+            List of messages that make up the prompt
+            
+        Raises:
+            ValueError: If the prompt is not found
+        """
+        prompt = self.get_prompt(prompt_name)
+        return await prompt.generate(**kwargs)
+
+    def register_mcp_handlers(self, mcp: FastMCP) -> None:
+        """Register all prompts as MCP handlers using FastMCP decorators."""
+        # For now, prompts need to be registered individually with specific parameters
+        # FastMCP doesn't support dynamic kwargs for prompts
+        # You can add specific prompt handlers here as needed
+        pass

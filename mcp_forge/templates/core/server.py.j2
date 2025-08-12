@@ -1,46 +1,130 @@
-"""{{ config.project_name }} MCP Server unified entry point."""
+"""{{ config.project_name }} MCP Server - Unified entry point for all transports."""
 
+from fastmcp import FastMCP
+from typing import List
 import argparse
 import sys
-from typing import Literal
+
+from {{ config.package_name }}.services.tool_service import ToolService
+from {{ config.package_name }}.services.resource_service import ResourceService
+from {{ config.package_name }}.services.prompt_service import PromptService
+from {{ config.package_name }}.interfaces.tool import Tool
+from {{ config.package_name }}.interfaces.resource import Resource
+from {{ config.package_name }}.interfaces.prompt import Prompt
+from {{ config.package_name }}.tools import (
+    AddNumbersTool,
+    DateDifferenceTool,
+    ReverseStringTool,
+    CurrentTimeTool,
+    RandomNumberTool
+)
+from {{ config.package_name }}.resources import HelloWorldResource, UserProfileResource
+from {{ config.package_name }}.prompts import (
+    CodeReviewPrompt,
+    DataAnalysisPrompt,
+    DebugAssistantPrompt
+)
+
+
+def get_available_tools() -> List[Tool]:
+    """Get list of all available tools."""
+    return [
+        AddNumbersTool(),
+        DateDifferenceTool(),
+        ReverseStringTool(),
+        CurrentTimeTool(),
+        RandomNumberTool(),
+    ]
+
+
+def get_available_resources() -> List[Resource]:
+    """Get list of all available resources."""
+    return [
+        HelloWorldResource(),
+        UserProfileResource(),
+    ]
+
+
+def get_available_prompts() -> List[Prompt]:
+    """Get list of all available prompts."""
+    return [
+        CodeReviewPrompt(),
+        DataAnalysisPrompt(),
+        DebugAssistantPrompt(),
+    ]
+
+
+def create_server() -> FastMCP:
+    """Create and configure the MCP server."""
+    mcp = FastMCP(
+        name="{{ config.project_name }}"
+    )
+    
+    tool_service = ToolService()
+    resource_service = ResourceService()
+    prompt_service = PromptService()
+
+    # Register all tools and their MCP handlers
+    tool_service.register_tools(get_available_tools())
+    tool_service.register_mcp_handlers(mcp)
+
+    # Register all resources and their MCP handlers
+    resource_service.register_resources(get_available_resources())
+    resource_service.register_mcp_handlers(mcp)
+    
+    # Register all prompts and their MCP handlers
+    prompt_service.register_prompts(get_available_prompts())
+    prompt_service.register_mcp_handlers(mcp)
+    
+    return mcp
+
+
+# Create server instance for module-level access
+mcp = create_server()
 
 
 def main():
-    """Entry point for the server."""
-    parser = argparse.ArgumentParser(description='{{ config.project_name }} MCP Server')
-    parser.add_argument(
-        '--mode',
-        type=str,
-        required=True,
-        choices=['stdio', 'sse'],
-        help='Server mode: stdio for standard I/O or sse for HTTP Server-Sent Events'
+    """Unified entry point supporting both stdio and HTTP transports."""
+    parser = argparse.ArgumentParser(
+        description='Run {{ config.project_name }} MCP Server',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run with stdio transport (for Claude Desktop, Cursor, etc.)
+  %(prog)s --transport stdio
+  
+  # Run with HTTP transport (for web deployments)
+  %(prog)s --transport http --port 8080
+  
+  # Run with HTTP transport in development mode
+  %(prog)s --transport http --reload
+        """
     )
-
-    # SSE specific arguments
-    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (SSE mode only)')
-    parser.add_argument('--port', type=int, default=6969, help='Port to listen on (SSE mode only)')
-    parser.add_argument('--reload', action='store_true', help='Enable auto-reload for development (SSE mode only)')
-
+    
+    parser.add_argument(
+        '--transport', 
+        choices=['stdio', 'http'],
+        default='stdio',
+        help='Transport mechanism to use (default: stdio)'
+    )
+    
+    # HTTP-specific arguments
+    parser.add_argument('--host', default='127.0.0.1', help='Host to bind to (HTTP only)')
+    parser.add_argument('--port', type=int, default=8000, help='Port to listen on (HTTP only)')
+    parser.add_argument('--reload', action='store_true', help='Enable auto-reload for development (HTTP only)')
+    
     args = parser.parse_args()
-
-    if args.mode == 'stdio':
-        # Import and run the stdio server
-        from {{ config.package_name }}.server_stdio import main as stdio_main
-        stdio_main()
-    elif args.mode == 'sse':
-        # Import and run the SSE server with appropriate arguments
-        from {{ config.package_name }}.server_sse import main as sse_main
-        sys.argv = [
-            sys.argv[0],
-            '--host', args.host,
-            '--port', str(args.port)
-        ]
-        if args.reload:
-            sys.argv.append('--reload')
-        sse_main()
-    else:
-        parser.print_help()
-        sys.exit(1)
+    
+    if args.transport == 'stdio':
+        if args.host != '127.0.0.1' or args.port != 8000 or args.reload:
+            print("Warning: --host, --port, and --reload are ignored with stdio transport", file=sys.stderr)
+        mcp.run(transport="stdio")
+    else:  # http
+        mcp.run(
+            transport="sse",
+            host=args.host,
+            port=args.port
+        )
 
 
 if __name__ == "__main__":

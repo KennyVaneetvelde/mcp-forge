@@ -1,7 +1,8 @@
-"""{{ config.project_name }} MCP Server implementation with stdio transport."""
+"""{{ config.project_name }} MCP Server implementation with Streamable HTTP transport."""
 
 from fastmcp import FastMCP
 from typing import List
+import argparse
 
 from {{ config.package_name }}.services.tool_service import ToolService
 from {{ config.package_name }}.services.resource_service import ResourceService
@@ -57,9 +58,23 @@ def create_server() -> FastMCP:
 
 
 def main():
-    """Entry point for stdio transport."""
+    """Entry point for Streamable HTTP transport."""
+    parser = argparse.ArgumentParser(description='Run MCP server with Streamable HTTP transport')
+    parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
+    parser.add_argument('--port', type=int, default=8000, help='Port to listen on')
+    parser.add_argument('--reload', action='store_true', help='Enable auto-reload for development')
+    args = parser.parse_args()
+    
     mcp = create_server()
-    mcp.run(transport="stdio")
+    
+    # Run with Streamable HTTP transport
+    mcp.run(
+        transport="streamable-http",
+        mount_path="/mcp",
+        host=args.host,
+        port=args.port,
+        reload=args.reload
+    )
 
 
 if __name__ == "__main__":

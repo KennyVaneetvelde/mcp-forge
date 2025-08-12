@@ -1,0 +1,772 @@
+#!/usr/bin/env python3
+"""
+Demo MCP Client for {{ config.project_name }}
+
+This client demonstrates all features of the MCP server including:
+- Tools execution
+- Resources reading
+- Prompts generation
+- Both stdio and HTTP transports
+"""
+
+import asyncio
+import json
+import sys
+import argparse
+from typing import Any, Dict, List, Optional
+from datetime import datetime
+import subprocess
+from pathlib import Path
+
+# Try to import required packages
+try:
+    import httpx
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm
+    from rich.json import JSON
+    from rich.syntax import Syntax
+    from rich import print as rprint
+except ImportError:
+    print("Installing required dependencies...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "httpx", "rich"])
+    import httpx
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm
+    from rich.json import JSON
+    from rich.syntax import Syntax
+    from rich import print as rprint
+
+console = Console()
+
+
+class MCPTransport:
+    """Base class for MCP transports."""
+    
+    async def initialize(self) -> Dict[str, Any]:
+        """Initialize the connection and return capabilities."""
+        raise NotImplementedError
+    
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Call a tool with given arguments."""
+        raise NotImplementedError
+    
+    async def read_resource(self, uri: str) -> Any:
+        """Read a resource by URI."""
+        raise NotImplementedError
+    
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Get a prompt with given arguments."""
+        raise NotImplementedError
+    
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        """List available tools."""
+        raise NotImplementedError
+    
+    async def list_resources(self) -> List[Dict[str, Any]]:
+        """List available resources."""
+        raise NotImplementedError
+    
+    async def list_prompts(self) -> List[Dict[str, Any]]:
+        """List available prompts."""
+        raise NotImplementedError
+    
+    async def close(self):
+        """Close the connection."""
+        pass
+
+
+class StdioTransport(MCPTransport):
+    """stdio transport implementation."""
+    
+    def __init__(self, server_module: str):
+        self.server_module = server_module
+        self.process: Optional[subprocess.Popen] = None
+        self.message_id = 0
+    
+    async def initialize(self) -> Dict[str, Any]:
+        """Start the server process and initialize."""
+        # Start the server process
+        self.process = subprocess.Popen(
+            [sys.executable, "-m", f"{self.server_module}.server", "--transport", "stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Send initialize request
+        request = {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "demo-client",
+                    "version": "1.0.0"
+                }
+            },
+            "id": self._next_id()
+        }
+        
+        response = await self._send_request(request)
+        
+        # Send initialized notification
+        notification = {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {}
+        }
+        await self._send_notification(notification)
+        
+        return response.get("result", {})
+    
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        """List available tools."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/list",
+            "params": {},
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {}).get("tools", [])
+    
+    async def list_resources(self) -> List[Dict[str, Any]]:
+        """List available resources."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "resources/list",
+            "params": {},
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {}).get("resources", [])
+    
+    async def list_prompts(self) -> List[Dict[str, Any]]:
+        """List available prompts."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "prompts/list",
+            "params": {},
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {}).get("prompts", [])
+    
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Call a tool."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments
+            },
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {})
+    
+    async def read_resource(self, uri: str) -> Any:
+        """Read a resource."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "resources/read",
+            "params": {
+                "uri": uri
+            },
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {})
+    
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Get a prompt."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "prompts/get",
+            "params": {
+                "name": name,
+                "arguments": arguments
+            },
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {})
+    
+    async def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a request and wait for response."""
+        if not self.process:
+            raise RuntimeError("Server process not started")
+        
+        # Send request
+        request_str = json.dumps(request) + "\n"
+        self.process.stdin.write(request_str)
+        self.process.stdin.flush()
+        
+        # Read response
+        response_str = self.process.stdout.readline()
+        if not response_str:
+            raise RuntimeError("No response from server")
+        
+        return json.loads(response_str)
+    
+    async def _send_notification(self, notification: Dict[str, Any]):
+        """Send a notification (no response expected)."""
+        if not self.process:
+            raise RuntimeError("Server process not started")
+        
+        notification_str = json.dumps(notification) + "\n"
+        self.process.stdin.write(notification_str)
+        self.process.stdin.flush()
+    
+    def _next_id(self) -> int:
+        """Get next message ID."""
+        self.message_id += 1
+        return self.message_id
+    
+    async def close(self):
+        """Terminate the server process."""
+        if self.process:
+            self.process.terminate()
+            self.process.wait()
+
+
+class StreamableHTTPTransport(MCPTransport):
+    """Streamable HTTP transport implementation."""
+    
+    def __init__(self, base_url: str = "http://localhost:8000"):
+        self.base_url = base_url
+        self.endpoint = f"{base_url}/mcp"
+        self.client = httpx.AsyncClient()
+        self.session_id: Optional[str] = None
+        self.message_id = 0
+    
+    async def initialize(self) -> Dict[str, Any]:
+        """Initialize connection with the server."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "demo-client",
+                    "version": "1.0.0"
+                }
+            },
+            "id": self._next_id()
+        }
+        
+        response = await self.client.post(
+            self.endpoint,
+            json=request,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        # Check for session ID in headers
+        if "Mcp-Session-Id" in response.headers:
+            self.session_id = response.headers["Mcp-Session-Id"]
+        
+        result = response.json()
+        
+        # Send initialized notification
+        await self._send_notification({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {}
+        })
+        
+        return result.get("result", {})
+    
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        """List available tools."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/list",
+            "params": {},
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {}).get("tools", [])
+    
+    async def list_resources(self) -> List[Dict[str, Any]]:
+        """List available resources."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "resources/list",
+            "params": {},
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {}).get("resources", [])
+    
+    async def list_prompts(self) -> List[Dict[str, Any]]:
+        """List available prompts."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "prompts/list",
+            "params": {},
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {}).get("prompts", [])
+    
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Call a tool."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments
+            },
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {})
+    
+    async def read_resource(self, uri: str) -> Any:
+        """Read a resource."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "resources/read",
+            "params": {
+                "uri": uri
+            },
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {})
+    
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Any:
+        """Get a prompt."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "prompts/get",
+            "params": {
+                "name": name,
+                "arguments": arguments
+            },
+            "id": self._next_id()
+        }
+        response = await self._send_request(request)
+        return response.get("result", {})
+    
+    async def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a request to the server."""
+        headers = {"Content-Type": "application/json"}
+        if self.session_id:
+            headers["Mcp-Session-Id"] = self.session_id
+        
+        response = await self.client.post(
+            self.endpoint,
+            json=request,
+            headers=headers
+        )
+        
+        return response.json()
+    
+    async def _send_notification(self, notification: Dict[str, Any]):
+        """Send a notification to the server."""
+        headers = {"Content-Type": "application/json"}
+        if self.session_id:
+            headers["Mcp-Session-Id"] = self.session_id
+        
+        await self.client.post(
+            self.endpoint,
+            json=notification,
+            headers=headers
+        )
+    
+    def _next_id(self) -> int:
+        """Get next message ID."""
+        self.message_id += 1
+        return self.message_id
+    
+    async def close(self):
+        """Close the HTTP client."""
+        await self.client.aclose()
+
+
+class MCPDemoClient:
+    """Interactive demo client for MCP servers."""
+    
+    def __init__(self, transport: MCPTransport):
+        self.transport = transport
+        self.capabilities: Dict[str, Any] = {}
+    
+    async def connect(self):
+        """Connect to the server and get capabilities."""
+        console.print("[bold cyan]Connecting to MCP server...[/bold cyan]")
+        self.capabilities = await self.transport.initialize()
+        console.print("[bold green]✓ Connected successfully![/bold green]")
+        self._display_capabilities()
+    
+    def _display_capabilities(self):
+        """Display server capabilities."""
+        panel = Panel(
+            JSON(json.dumps(self.capabilities, indent=2)),
+            title="[bold]Server Capabilities[/bold]",
+            border_style="cyan"
+        )
+        console.print(panel)
+    
+    async def demo_tools(self):
+        """Demonstrate tool functionality."""
+        console.print("\n[bold cyan]═══ TOOLS DEMONSTRATION ═══[/bold cyan]\n")
+        
+        # List tools
+        tools = await self.transport.list_tools()
+        if not tools:
+            console.print("[yellow]No tools available[/yellow]")
+            return
+        
+        # Display tools table
+        table = Table(title="Available Tools")
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white")
+        
+        for tool in tools:
+            table.add_row(tool.get("name", ""), tool.get("description", ""))
+        
+        console.print(table)
+        
+        # Demo each tool
+        demos = [
+            ("add_numbers", {"a": 5, "b": 3}),
+            ("reverse_string", {"text": "Hello MCP!"}),
+            ("current_time", {}),
+            ("random_number", {"min": 1, "max": 100}),
+            ("date_difference", {"date1": "2024-01-01", "date2": "2024-12-31"})
+        ]
+        
+        for tool_name, args in demos:
+            if any(t.get("name") == tool_name for t in tools):
+                await self._demo_tool(tool_name, args)
+    
+    async def _demo_tool(self, name: str, arguments: Dict[str, Any]):
+        """Demo a single tool."""
+        console.print(f"\n[bold]Testing tool: {name}[/bold]")
+        console.print(f"Arguments: {arguments}")
+        
+        try:
+            result = await self.transport.call_tool(name, arguments)
+            console.print("[green]Result:[/green]")
+            rprint(JSON(json.dumps(result, indent=2)))
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    
+    async def demo_resources(self):
+        """Demonstrate resource functionality."""
+        console.print("\n[bold cyan]═══ RESOURCES DEMONSTRATION ═══[/bold cyan]\n")
+        
+        # List resources
+        resources = await self.transport.list_resources()
+        if not resources:
+            console.print("[yellow]No resources available[/yellow]")
+            return
+        
+        # Display resources table
+        table = Table(title="Available Resources")
+        table.add_column("Name", style="cyan")
+        table.add_column("URI", style="green")
+        table.add_column("Description", style="white")
+        
+        for resource in resources:
+            table.add_row(
+                resource.get("name", ""),
+                resource.get("uri", ""),
+                resource.get("description", "")
+            )
+        
+        console.print(table)
+        
+        # Demo each resource
+        demos = [
+            "hello://world",
+            "user://profile/123",
+            "user://profile/alice"
+        ]
+        
+        for uri in demos:
+            await self._demo_resource(uri)
+    
+    async def _demo_resource(self, uri: str):
+        """Demo a single resource."""
+        console.print(f"\n[bold]Reading resource: {uri}[/bold]")
+        
+        try:
+            result = await self.transport.read_resource(uri)
+            console.print("[green]Content:[/green]")
+            
+            # Display based on content type
+            contents = result.get("contents", [])
+            for content in contents:
+                if content.get("mimeType") == "application/json":
+                    data = json.loads(content.get("text", "{}"))
+                    rprint(JSON(json.dumps(data, indent=2)))
+                else:
+                    console.print(content.get("text", ""))
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    
+    async def demo_prompts(self):
+        """Demonstrate prompt functionality."""
+        console.print("\n[bold cyan]═══ PROMPTS DEMONSTRATION ═══[/bold cyan]\n")
+        
+        # List prompts
+        prompts = await self.transport.list_prompts()
+        if not prompts:
+            console.print("[yellow]No prompts available[/yellow]")
+            return
+        
+        # Display prompts table
+        table = Table(title="Available Prompts")
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white")
+        
+        for prompt in prompts:
+            table.add_row(prompt.get("name", ""), prompt.get("description", ""))
+        
+        console.print(table)
+        
+        # Demo each prompt
+        demos = [
+            ("code_review", {
+                "code": "def add(a, b):\n    return a + b",
+                "language": "python"
+            }),
+            ("data_analysis", {
+                "data": json.dumps({"sales": [100, 150, 120, 180, 200]}),
+                "analysis_type": "trend"
+            }),
+            ("debug_assistant", {
+                "code": "for i in range(10)\n    print(i)",
+                "error_message": "SyntaxError: invalid syntax"
+            })
+        ]
+        
+        for prompt_name, args in demos:
+            if any(p.get("name") == prompt_name for p in prompts):
+                await self._demo_prompt(prompt_name, args)
+    
+    async def _demo_prompt(self, name: str, arguments: Dict[str, Any]):
+        """Demo a single prompt."""
+        console.print(f"\n[bold]Testing prompt: {name}[/bold]")
+        console.print(f"Arguments: {json.dumps(arguments, indent=2)}")
+        
+        try:
+            result = await self.transport.get_prompt(name, arguments)
+            console.print("[green]Generated prompt:[/green]")
+            
+            messages = result.get("messages", [])
+            for msg in messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", {})
+                
+                if isinstance(content, dict):
+                    text = content.get("text", "")
+                else:
+                    text = str(content)
+                
+                console.print(f"\n[bold]{role.upper()}:[/bold]")
+                console.print(text)
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    
+    async def interactive_mode(self):
+        """Run interactive testing mode."""
+        while True:
+            console.print("\n[bold cyan]Interactive Mode[/bold cyan]")
+            console.print("1. Test Tools")
+            console.print("2. Test Resources")
+            console.print("3. Test Prompts")
+            console.print("4. Custom Tool Call")
+            console.print("5. Custom Resource Read")
+            console.print("6. Custom Prompt Get")
+            console.print("7. Exit")
+            
+            choice = Prompt.ask("Select option", choices=["1","2","3","4","5","6","7"])
+            
+            if choice == "1":
+                await self.demo_tools()
+            elif choice == "2":
+                await self.demo_resources()
+            elif choice == "3":
+                await self.demo_prompts()
+            elif choice == "4":
+                await self.custom_tool_call()
+            elif choice == "5":
+                await self.custom_resource_read()
+            elif choice == "6":
+                await self.custom_prompt_get()
+            elif choice == "7":
+                break
+    
+    async def custom_tool_call(self):
+        """Make a custom tool call."""
+        tools = await self.transport.list_tools()
+        tool_names = [t.get("name", "") for t in tools]
+        
+        if not tool_names:
+            console.print("[yellow]No tools available[/yellow]")
+            return
+        
+        name = Prompt.ask("Tool name", choices=tool_names)
+        args_str = Prompt.ask("Arguments (JSON)")
+        
+        try:
+            arguments = json.loads(args_str)
+            result = await self.transport.call_tool(name, arguments)
+            console.print("[green]Result:[/green]")
+            rprint(JSON(json.dumps(result, indent=2)))
+        except json.JSONDecodeError:
+            console.print("[red]Invalid JSON[/red]")
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    
+    async def custom_resource_read(self):
+        """Read a custom resource."""
+        uri = Prompt.ask("Resource URI")
+        
+        try:
+            result = await self.transport.read_resource(uri)
+            console.print("[green]Content:[/green]")
+            contents = result.get("contents", [])
+            for content in contents:
+                console.print(content.get("text", ""))
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    
+    async def custom_prompt_get(self):
+        """Get a custom prompt."""
+        prompts = await self.transport.list_prompts()
+        prompt_names = [p.get("name", "") for p in prompts]
+        
+        if not prompt_names:
+            console.print("[yellow]No prompts available[/yellow]")
+            return
+        
+        name = Prompt.ask("Prompt name", choices=prompt_names)
+        args_str = Prompt.ask("Arguments (JSON)", default="{}")
+        
+        try:
+            arguments = json.loads(args_str)
+            result = await self.transport.get_prompt(name, arguments)
+            console.print("[green]Generated prompt:[/green]")
+            
+            messages = result.get("messages", [])
+            for msg in messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", {})
+                text = content.get("text", "") if isinstance(content, dict) else str(content)
+                console.print(f"\n[bold]{role.upper()}:[/bold]\n{text}")
+        except json.JSONDecodeError:
+            console.print("[red]Invalid JSON[/red]")
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+    
+    async def run_full_demo(self):
+        """Run full demonstration of all features."""
+        await self.connect()
+        await self.demo_tools()
+        await self.demo_resources()
+        await self.demo_prompts()
+    
+    async def close(self):
+        """Close the connection."""
+        await self.transport.close()
+        console.print("[bold green]✓ Connection closed[/bold green]")
+
+
+async def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Demo client for {{ config.project_name }} MCP Server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Test with stdio transport
+  python demo_client.py --transport stdio
+  
+  # Test with HTTP transport
+  python demo_client.py --transport http --url http://localhost:8000
+  
+  # Run interactive mode
+  python demo_client.py --transport http --interactive
+  
+  # Run full demo
+  python demo_client.py --transport stdio --full-demo
+        """
+    )
+    
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport to use"
+    )
+    
+    parser.add_argument(
+        "--url",
+        default="http://localhost:8000",
+        help="Server URL for HTTP transport"
+    )
+    
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run in interactive mode"
+    )
+    
+    parser.add_argument(
+        "--full-demo",
+        action="store_true",
+        help="Run full demonstration"
+    )
+    
+    args = parser.parse_args()
+    
+    # Print header
+    console.print(Panel.fit(
+        "[bold]MCP Demo Client[/bold]\n"
+        f"Transport: [cyan]{args.transport}[/cyan]",
+        border_style="blue"
+    ))
+    
+    # Create transport
+    if args.transport == "stdio":
+        transport = StdioTransport("{{ config.package_name }}")
+    else:
+        transport = StreamableHTTPTransport(args.url)
+    
+    # Create client
+    client = MCPDemoClient(transport)
+    
+    try:
+        if args.interactive:
+            await client.connect()
+            await client.interactive_mode()
+        elif args.full_demo:
+            await client.run_full_demo()
+        else:
+            # Default: run full demo
+            await client.run_full_demo()
+    finally:
+        await client.close()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted by user[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]Error: {e}[/red]")
+        sys.exit(1)

@@ -1,0 +1,75 @@
+"""Data analysis prompt implementation."""
+from typing import List
+from {{ config.package_name }}.interfaces.prompt import Prompt, PromptMessage, PromptArgument
+
+
+class DataAnalysisPrompt(Prompt):
+    """Prompt for analyzing data and generating insights."""
+    
+    @property
+    def name(self) -> str:
+        return "data_analysis"
+    
+    @property
+    def description(self) -> str:
+        return "Analyze data and provide insights, patterns, and recommendations"
+    
+    @property
+    def arguments(self) -> List[PromptArgument]:
+        return [
+            PromptArgument(
+                name="data",
+                description="The data to analyze (JSON, CSV, or text format)",
+                required=True
+            ),
+            PromptArgument(
+                name="analysis_type",
+                description="Type of analysis to perform (statistical, trend, comparison)",
+                required=False,
+                default="comprehensive"
+            ),
+            PromptArgument(
+                name="business_context",
+                description="Business context or domain information",
+                required=False,
+                default=""
+            )
+        ]
+    
+    async def generate(self, **kwargs) -> List[PromptMessage]:
+        """Generate the data analysis prompt."""
+        data = kwargs.get("data", "")
+        analysis_type = kwargs.get("analysis_type", "comprehensive")
+        business_context = kwargs.get("business_context", "")
+        
+        messages = [
+            PromptMessage(
+                role="user",
+                content=f"I need you to analyze the following data and provide {analysis_type} analysis:"
+            ),
+            PromptMessage(
+                role="user",
+                content=f"Data:\n{data}"
+            )
+        ]
+        
+        if business_context:
+            messages.append(
+                PromptMessage(
+                    role="user",
+                    content=f"Business Context: {business_context}"
+                )
+            )
+        
+        messages.extend([
+            PromptMessage(
+                role="assistant",
+                content="I'll analyze this data to identify patterns, trends, and actionable insights."
+            ),
+            PromptMessage(
+                role="user",
+                content="Please provide:\n1. Data summary and key statistics\n2. Identified patterns and trends\n3. Anomalies or outliers\n4. Correlations and relationships\n5. Actionable recommendations\n6. Visualization suggestions"
+            )
+        ])
+        
+        return messages

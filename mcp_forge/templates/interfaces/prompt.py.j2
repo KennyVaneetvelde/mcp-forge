@@ -1,0 +1,51 @@
+"""Base interface for prompts."""
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+
+
+class PromptMessage(BaseModel):
+    """A single message in a prompt."""
+    role: str = Field(description="Role of the message sender (user or assistant)")
+    content: str = Field(description="Content of the message")
+
+
+class PromptArgument(BaseModel):
+    """An argument that can be passed to a prompt."""
+    name: str = Field(description="Name of the argument")
+    description: str = Field(description="Description of what this argument is for")
+    required: bool = Field(default=True, description="Whether this argument is required")
+    default: Optional[Any] = Field(default=None, description="Default value if not provided")
+
+
+class Prompt(ABC):
+    """Base class for all prompts."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Unique name for the prompt."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Description of what the prompt does."""
+        pass
+
+    @property
+    def arguments(self) -> List[PromptArgument]:
+        """List of arguments this prompt accepts."""
+        return []
+
+    @abstractmethod
+    async def generate(self, **kwargs) -> List[PromptMessage]:
+        """Generate the prompt messages with the given arguments.
+        
+        Args:
+            **kwargs: Arguments for the prompt
+            
+        Returns:
+            List of messages that make up the prompt
+        """
+        pass

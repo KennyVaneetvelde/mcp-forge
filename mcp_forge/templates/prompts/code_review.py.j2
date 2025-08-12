@@ -1,0 +1,68 @@
+"""Code review prompt implementation."""
+from typing import List
+from {{ config.package_name }}.interfaces.prompt import Prompt, PromptMessage, PromptArgument
+
+
+class CodeReviewPrompt(Prompt):
+    """Prompt for performing code reviews."""
+    
+    @property
+    def name(self) -> str:
+        return "code_review"
+    
+    @property
+    def description(self) -> str:
+        return "Analyze code for quality, bugs, and improvements"
+    
+    @property
+    def arguments(self) -> List[PromptArgument]:
+        return [
+            PromptArgument(
+                name="code",
+                description="The code to review",
+                required=True
+            ),
+            PromptArgument(
+                name="language",
+                description="Programming language of the code",
+                required=False,
+                default="auto-detect"
+            ),
+            PromptArgument(
+                name="focus_areas",
+                description="Specific areas to focus on (e.g., security, performance)",
+                required=False,
+                default="general"
+            )
+        ]
+    
+    async def generate(self, **kwargs) -> List[PromptMessage]:
+        """Generate the code review prompt."""
+        code = kwargs.get("code", "")
+        language = kwargs.get("language", "auto-detect")
+        focus_areas = kwargs.get("focus_areas", "general")
+        
+        messages = [
+            PromptMessage(
+                role="user",
+                content=f"Please review the following {language} code:"
+            ),
+            PromptMessage(
+                role="user",
+                content=f"```{language if language != 'auto-detect' else ''}\n{code}\n```"
+            ),
+            PromptMessage(
+                role="user",
+                content=f"Focus areas: {focus_areas}"
+            ),
+            PromptMessage(
+                role="assistant",
+                content="I'll analyze this code for quality, potential issues, and improvements."
+            ),
+            PromptMessage(
+                role="user",
+                content="Please provide:\n1. Code quality assessment\n2. Potential bugs or issues\n3. Performance considerations\n4. Security concerns\n5. Suggested improvements"
+            )
+        ]
+        
+        return messages
