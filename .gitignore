@@ -4,3 +4,6 @@
 .venv/
 dist/
 build/
+.serena
+.claude
+CLAUDE.md
