@@ -1,0 +1,257 @@
+"""{{ config.project_name }} MCP Server implementation with SSE transport and SSL support."""
+
+import os
+import ssl
+import sys
+import argparse
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from fastmcp import FastMCP
+
+from {{ config.package_name }}.services.tool_service import ToolService
+from {{ config.package_name }}.services.resource_service import ResourceService
+{% if config.with_prompts -%}
+from {{ config.package_name }}.services.prompt_service import PromptService
+{% endif -%}
+from {{ config.package_name }}.interfaces.tool import Tool
+from {{ config.package_name }}.interfaces.resource import Resource
+{% if config.with_prompts -%}
+from {{ config.package_name }}.interfaces.prompt import Prompt
+{% endif -%}
+from {{ config.package_name }}.tools import (
+    AddNumbersTool,
+    DateDifferenceTool,
+    ReverseStringTool,
+    CurrentTimeTool,
+    RandomNumberTool
+)
+from {{ config.package_name }}.resources import HelloWorldResource, UserProfileResource
+{% if config.with_prompts -%}
+from {{ config.package_name }}.prompts import (
+    CodeReviewPrompt,
+    DataAnalysisPrompt,
+    DebugAssistantPrompt
+)
+{% endif %}
+
+
+def get_available_tools() -> List[Tool]:
+    """Get list of all available tools."""
+    return [
+        AddNumbersTool(),
+        DateDifferenceTool(),
+        ReverseStringTool(),
+        CurrentTimeTool(),
+        RandomNumberTool(),
+    ]
+
+
+def get_available_resources() -> List[Resource]:
+    """Get list of all available resources."""
+    return [
+        HelloWorldResource(),
+        UserProfileResource(),
+    ]
+
+{% if config.with_prompts %}
+def get_available_prompts() -> List[Prompt]:
+    """Get list of all available prompts."""
+    return [
+        CodeReviewPrompt(),
+        DataAnalysisPrompt(),
+        DebugAssistantPrompt(),
+    ]
+{% endif %}
+
+def create_server() -> FastMCP:
+    """Create and configure the MCP server."""
+    mcp = FastMCP(
+        name="{{ config.project_name }}"
+    )
+    
+    tool_service = ToolService()
+    resource_service = ResourceService()
+    {% if config.with_prompts -%}
+    prompt_service = PromptService()
+    {% endif %}
+    # Register all tools and their MCP handlers
+    tool_service.register_tools(get_available_tools())
+    tool_service.register_mcp_handlers(mcp)
+
+    # Register all resources and their MCP handlers
+    resource_service.register_resources(get_available_resources())
+    resource_service.register_mcp_handlers(mcp)
+    
+    {% if config.with_prompts -%}
+    # Register all prompts and their MCP handlers
+    prompt_service.register_prompts(get_available_prompts())
+    prompt_service.register_mcp_handlers(mcp)
+    {% endif %}
+    return mcp
+
+
+def get_ssl_config(args: argparse.Namespace) -> Dict[str, Any]:
+    """Configure SSL settings based on command line arguments and environment."""
+    ssl_config = {}
+    
+    # Check for SSL certificate files
+    ssl_keyfile = args.ssl_keyfile or os.getenv("SSL_KEYFILE")
+    ssl_certfile = args.ssl_certfile or os.getenv("SSL_CERTFILE")
+    ssl_ca_certs = args.ssl_ca_certs or os.getenv("SSL_CA_CERTS")
+    
+    if ssl_keyfile and ssl_certfile:
+        # Validate certificate files exist
+        if not Path(ssl_keyfile).exists():
+            raise FileNotFoundError(f"SSL key file not found: {ssl_keyfile}")
+        if not Path(ssl_certfile).exists():
+            raise FileNotFoundError(f"SSL certificate file not found: {ssl_certfile}")
+        if ssl_ca_certs and not Path(ssl_ca_certs).exists():
+            raise FileNotFoundError(f"SSL CA certificate file not found: {ssl_ca_certs}")
+        
+        ssl_config = {
+            "ssl_keyfile": ssl_keyfile,
+            "ssl_certfile": ssl_certfile,
+        }
+        
+        if ssl_ca_certs:
+            ssl_config["ssl_ca_certs"] = ssl_ca_certs
+        
+        # Configure SSL version (TLS 1.3 preferred, fallback to 1.2)
+        if args.tls_version == "1.3":
+            ssl_config["ssl_version"] = 17  # TLS 1.3
+        elif args.tls_version == "1.2":
+            ssl_config["ssl_version"] = 5   # TLS 1.2
+        else:
+            ssl_config["ssl_version"] = ssl.PROTOCOL_TLS  # Auto-negotiate
+        
+        # Configure cipher suites for security
+        if not args.disable_ssl_ciphers:
+            ssl_config["ssl_ciphers"] = (
+                "ECDHE-ECDSA-AES256-GCM-SHA384:"
+                "ECDHE-RSA-AES256-GCM-SHA384:"
+                "ECDHE-ECDSA-CHACHA20-POLY1305:"
+                "ECDHE-RSA-CHACHA20-POLY1305:"
+                "ECDHE-ECDSA-AES128-GCM-SHA256:"
+                "ECDHE-RSA-AES128-GCM-SHA256"
+            )
+        
+        # Enable client certificate verification if requested
+        if args.require_client_cert:
+            ssl_config["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+            if not ssl_ca_certs:
+                raise ValueError("--ssl-ca-certs required when --require-client-cert is set")
+    
+    return ssl_config
+
+
+def main():
+    """Entry point for SSE transport with SSL support."""
+    parser = argparse.ArgumentParser(
+        description='Run {{ config.project_name }} MCP Server with SSE transport',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run with SSE transport (no SSL)
+  %(prog)s
+  
+  # Run with SSL/TLS encryption
+  %(prog)s --ssl-keyfile server.key --ssl-certfile server.crt
+  
+  # Run with SSL and client certificate verification (mTLS)
+  %(prog)s --ssl-keyfile server.key --ssl-certfile server.crt \\
+           --ssl-ca-certs ca.crt --require-client-cert
+  
+  # Run with environment-based SSL configuration
+  SSL_KEYFILE=/etc/ssl/server.key SSL_CERTFILE=/etc/ssl/server.crt %(prog)s
+  
+  # Generate self-signed certificate for development:
+  openssl req -x509 -newkey rsa:4096 -nodes \\
+    -out cert.pem -keyout key.pem -days 365 \\
+    -subj "/C=US/ST=State/L=City/O=Org/CN=localhost"
+        """
+    )
+    
+    # Network configuration
+    parser.add_argument('--host', default='127.0.0.1', 
+                       help='Host to bind to (default: 127.0.0.1)')
+    parser.add_argument('--port', type=int, default=8000, 
+                       help='Port to listen on (default: 8000)')
+    parser.add_argument('--path', default='/sse',
+                       help='SSE endpoint path (default: /sse)')
+    
+    # SSL/TLS configuration
+    parser.add_argument('--ssl-keyfile', 
+                       help='Path to SSL private key file')
+    parser.add_argument('--ssl-certfile', 
+                       help='Path to SSL certificate file')
+    parser.add_argument('--ssl-ca-certs', 
+                       help='Path to CA certificates for client verification')
+    parser.add_argument('--tls-version', choices=['1.2', '1.3', 'auto'], 
+                       default='auto',
+                       help='TLS version to use (default: auto)')
+    parser.add_argument('--require-client-cert', action='store_true',
+                       help='Require client certificate (mTLS)')
+    parser.add_argument('--disable-ssl-ciphers', action='store_true',
+                       help='Disable custom cipher suite configuration')
+    
+    # Development options
+    parser.add_argument('--reload', action='store_true', 
+                       help='Enable auto-reload for development')
+    parser.add_argument('--debug', action='store_true',
+                       help='Enable debug mode')
+    
+    args = parser.parse_args()
+    
+    # Create server instance
+    mcp = create_server()
+    
+    # Get SSL configuration
+    ssl_config = get_ssl_config(args)
+    
+    # Prepare uvicorn configuration
+    uvicorn_config = {
+        "access_log": args.debug,
+        "server_header": False,  # Security: Hide server information
+    }
+    
+    # Add SSL configuration if available
+    uvicorn_config.update(ssl_config)
+    
+    # Add reload option for development
+    if args.reload:
+        uvicorn_config["reload"] = True
+    
+    # Display startup information
+    protocol = "https" if ssl_config else "http"
+    print(f"Starting {{ config.project_name }} SSE server...")
+    print(f"Server URL: {protocol}://{args.host}:{args.port}{args.path}")
+    
+    if ssl_config:
+        print("SSL/TLS: Enabled")
+        if args.require_client_cert:
+            print("Client certificates: Required (mTLS)")
+        print(f"TLS version: {args.tls_version}")
+    else:
+        print("⚠️  WARNING: Running without SSL/TLS encryption")
+        print("   For production, use --ssl-keyfile and --ssl-certfile")
+    
+    # Run SSE server with configuration
+    try:
+        mcp.run(
+            transport="sse",
+            host=args.host,
+            port=args.port,
+            path=args.path,
+            uvicorn_config=uvicorn_config
+        )
+    except FileNotFoundError as e:
+        print(f"❌ Error: {e}")
+        print("Please check that SSL certificate files exist and are readable.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Failed to start server: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

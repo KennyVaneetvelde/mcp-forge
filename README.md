@@ -14,7 +14,8 @@ Your support helps maintain and improve the project!
 
 ## ✨ Features
 
-- 🚀 **Dual Transports**: stdio (recommended) and HTTP transport (using SSE)
+- 🚀 **Multiple Transports**: stdio (recommended), HTTP, and SSE with SSL/TLS support
+- 🔐 **SSL/TLS Security**: Full SSL support for SSE transport including mTLS
 - 🛠️ **Tools**: 5 ready-to-use example tools with full type validation
 - 📦 **Resources**: Static and dynamic resource examples with URI patterns
 - 💬 **Prompts**: Template structure for prompt implementations
@@ -51,7 +52,6 @@ uvx mcp-forge new my-server
 # With options
 uvx mcp-forge new my-server \
   --description "My amazing MCP server" \
-  --transport both \
   --with-prompts \
   --with-sampling
 ```
@@ -60,21 +60,23 @@ uvx mcp-forge new my-server \
 
 - `--description` / `-d`: Project description
 - `--python-version` / `-p`: Python version requirement (default: `>=3.10`)
-- `--transport` / `-t`: Transport mechanism (`stdio`, `http`, `both`) (default: `both`)
 - `--with-prompts` / `--no-prompts`: Include prompt examples (default: enabled)
 - `--with-sampling` / `--no-sampling`: Enable sampling support (default: enabled)
 
 ### Examples
 
 ```bash
-# HTTP-only server for web deployment
-uvx mcp-forge new web-server --transport http
+# Basic server
+uvx mcp-forge new my-server
 
-# Minimal stdio server without extras
-uvx mcp-forge new simple-server --transport stdio --no-prompts --no-sampling
+# Server with description
+uvx mcp-forge new my-server --description "My awesome MCP server"
+
+# Minimal server without extras
+uvx mcp-forge new simple-server --no-prompts --no-sampling
 
 # Full-featured server with everything
-uvx mcp-forge new full-server --transport both --with-prompts --with-sampling
+uvx mcp-forge new full-server --with-prompts --with-sampling
 ```
 
 ## Generated Project Structure
@@ -83,9 +85,10 @@ uvx mcp-forge new full-server --transport both --with-prompts --with-sampling
 my-server/
 ├── my_server/
 │   ├── __init__.py
-│   ├── server.py                # Unified entry point (NEW)
+│   ├── server.py                # Unified entry point
 │   ├── server_stdio.py          # stdio transport
-│   ├── server_http.py           # HTTP transport (SSE-based)
+│   ├── server_http.py           # HTTP transport
+│   ├── server_sse.py            # SSE transport with SSL support
 │   ├── interfaces/
 │   │   ├── tool.py
 │   │   ├── resource.py
@@ -111,6 +114,29 @@ my-server/
 └── README.md
 ```
 
+## Transport Options
+
+MCP-Forge supports multiple transport mechanisms, each suited for different use cases:
+
+### stdio Transport
+- **Best for**: Claude Desktop, Cursor, local development
+- **Protocol**: Standard input/output communication
+- **Security**: Inherits from parent process
+- **Usage**: `--transport stdio`
+
+### HTTP Transport  
+- **Best for**: Web deployments, REST API integration
+- **Protocol**: HTTP with request/response pattern
+- **Security**: HTTPS via reverse proxy recommended
+- **Usage**: `--transport http`
+
+### SSE Transport
+- **Best for**: Real-time streaming, secure communications
+- **Protocol**: Server-Sent Events over HTTP/HTTPS
+- **Security**: Built-in SSL/TLS and mTLS support
+- **Usage**: `--transport sse`
+
+
 ## Using Your Generated Server
 
 ### 1. Setup
@@ -127,9 +153,20 @@ uv pip install -e .
 # Unified entry point (recommended)
 python -m my_server.server --transport stdio  # For Claude Desktop, Cursor
 python -m my_server.server --transport http   # For web deployments
+python -m my_server.server --transport sse    # For SSE with optional SSL
 
 # With options
 python -m my_server.server --transport http --port 8080 --reload
+
+# SSE with SSL/TLS
+python -m my_server.server_sse --ssl-keyfile server.key --ssl-certfile server.crt
+
+# SSE with mTLS (mutual TLS)
+python -m my_server.server_sse \
+  --ssl-keyfile server.key \
+  --ssl-certfile server.crt \
+  --ssl-ca-certs ca.crt \
+  --require-client-cert
 ```
 
 ### 3. Test Your Server
@@ -161,6 +198,84 @@ Add to Claude Desktop config:
 }
 ```
 
+## SSE Transport with SSL/TLS Support
+
+The SSE (Server-Sent Events) transport provides real-time server-to-client streaming with comprehensive SSL/TLS security features.
+
+### SSL/TLS Features
+
+- **Modern TLS Support**: TLS 1.2 and 1.3 with configurable cipher suites
+- **Certificate Management**: Support for SSL certificates, private keys, and CA bundles
+- **mTLS Support**: Client certificate verification for mutual TLS authentication
+- **Environment Variables**: Configure SSL via environment for production deployments
+- **Development Mode**: Instructions and tools for self-signed certificates
+
+### Configuration Options
+
+```bash
+# Basic SSE server (no SSL)
+python -m my_server.server_sse
+
+# With SSL/TLS encryption
+python -m my_server.server_sse \
+  --ssl-keyfile /path/to/server.key \
+  --ssl-certfile /path/to/server.crt
+
+# With specific TLS version
+python -m my_server.server_sse \
+  --ssl-keyfile server.key \
+  --ssl-certfile server.crt \
+  --tls-version 1.3
+
+# With client certificate verification (mTLS)
+python -m my_server.server_sse \
+  --ssl-keyfile server.key \
+  --ssl-certfile server.crt \
+  --ssl-ca-certs ca.crt \
+  --require-client-cert
+
+# Using environment variables
+SSL_KEYFILE=/etc/ssl/server.key \
+SSL_CERTFILE=/etc/ssl/server.crt \
+python -m my_server.server_sse
+```
+
+### Generating Self-Signed Certificates
+
+For development and testing:
+
+```bash
+# Generate a self-signed certificate
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -out cert.pem -keyout key.pem -days 365 \
+  -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+
+# Generate with specific domains
+openssl req -x509 -newkey rsa:4096 -nodes \
+  -out cert.pem -keyout key.pem -days 365 \
+  -subj "/CN=myserver.local" \
+  -addext "subjectAltName=DNS:myserver.local,DNS:localhost,IP:127.0.0.1"
+```
+
+### Production Deployment
+
+For production environments:
+
+1. **Use trusted certificates** from a Certificate Authority (Let's Encrypt, etc.)
+2. **Enable strict TLS** with `--tls-version 1.3`
+3. **Configure strong ciphers** (enabled by default)
+4. **Use reverse proxy** (Nginx, Cloudflare) for SSL termination
+5. **Enable mTLS** for enhanced security when appropriate
+
+### Security Best Practices
+
+- Always use HTTPS/TLS in production
+- Keep certificates and keys secure (proper file permissions)
+- Rotate certificates regularly
+- Monitor certificate expiration
+- Use strong cipher suites (configured by default)
+- Consider using a reverse proxy for additional security layers
+
 ## What's New in v0.3.0
 
 ### Breaking Changes
@@ -169,10 +284,12 @@ Add to Claude Desktop config:
 - 🔄 **FastMCP import changes** - Now uses `from fastmcp import FastMCP`
 
 ### New Features
-- ✅ **HTTP transport** - Web-ready communication (SSE-based in FastMCP 2.x)
+- ✅ **SSE transport** - Server-Sent Events with full SSL/TLS support
+- 🔐 **SSL/mTLS support** - Comprehensive security features for SSE
+- ✅ **HTTP transport** - Web-ready communication
 - 💬 **Prompts support** - Reusable message templates
 - 🤖 **Sampling capability** - AI-to-AI collaboration
-- 🎯 **Transport selection** - Choose stdio, HTTP, or both
+- 🎯 **Transport selection** - Choose stdio, HTTP, SSE, or all
 - 📦 **FastMCP 2.0** - Latest framework integration
 
 ### Migration from v0.2.x
@@ -188,7 +305,7 @@ If you have existing servers:
 MCP-Forge includes a universal demo client (`demo_mcp_client.py`) that can test any MCP server:
 
 ### Features
-- Test both stdio and HTTP transports
+- Test stdio, HTTP, and SSE transports
 - Automatic discovery of tools, resources, and prompts
 - Interactive and automated testing modes
 - Comprehensive test suite with examples

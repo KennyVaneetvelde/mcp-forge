@@ -96,6 +96,9 @@ Examples:
   # Run with HTTP transport (for web deployments)
   %(prog)s --transport http --port 8080
   
+  # Run with SSE transport (Server-Sent Events)
+  %(prog)s --transport sse --port 8443
+  
   # Run with HTTP transport in development mode
   %(prog)s --transport http --reload
         """
@@ -103,7 +106,7 @@ Examples:
     
     parser.add_argument(
         '--transport', 
-        choices=['stdio', 'http'],
+        choices=['stdio', 'http', 'sse'],
         default='stdio',
         help='Transport mechanism to use (default: stdio)'
     )
@@ -119,11 +122,19 @@ Examples:
         if args.host != '127.0.0.1' or args.port != 8000 or args.reload:
             print("Warning: --host, --port, and --reload are ignored with stdio transport", file=sys.stderr)
         mcp.run(transport="stdio")
-    else:  # http
+    elif args.transport == 'http':
+        mcp.run(
+            transport="http",
+            host=args.host,
+            port=args.port,
+            path="/mcp"
+        )
+    else:  # sse
         mcp.run(
             transport="sse",
             host=args.host,
-            port=args.port
+            port=args.port,
+            path="/sse"
         )
 
 
