@@ -1,0 +1,107 @@
+"""Reasoning tool implementation with sampling support."""
+from typing import List
+from pydantic import Field
+from fastmcp import Context
+from {{ config.package_name }}.interfaces.tool import Tool, ToolResponse, BaseToolInput, ToolContent
+
+
+class ReasoningToolInput(BaseToolInput):
+    """Input model for reasoning tool."""
+
+    problem: str = Field(description="The problem or question to reason about")
+    context: str = Field(default="", description="Additional context or information")
+    steps: int = Field(default=3, description="Number of reasoning steps to perform", ge=1, le=10)
+
+
+class ReasoningTool(Tool):
+    """Tool that uses LLM sampling to perform multi-step reasoning.
+
+    This tool demonstrates how to use the MCP sampling capability to request
+    LLM completions from the client, enabling AI-to-AI collaboration for
+    complex reasoning tasks.
+    """
+
+    name = "reasoning_tool"
+    description = "Perform multi-step reasoning using LLM sampling to break down complex problems"
+    input_model = ReasoningToolInput
+
+    async def execute(self, input_data: ReasoningToolInput, ctx: Context) -> ToolResponse:
+        """Execute multi-step reasoning using sampling."""
+
+        # Log the reasoning request
+        await ctx.info(f"Starting {input_data.steps}-step reasoning process")
+
+        # Build the initial prompt
+        problem = input_data.problem
+        context_info = f"\n\nContext: {input_data.context}" if input_data.context else ""
+
+        reasoning_steps = []
+        current_analysis = ""
+
+        # Perform reasoning steps using sampling
+        for step in range(input_data.steps):
+            await ctx.report_progress(progress=step, total=input_data.steps)
+
+            # Construct the prompt for this reasoning step
+            if step == 0:
+                prompt = f"""Problem: {problem}{context_info}
+
+Please provide the first step of reasoning to solve this problem. Focus on understanding the problem and identifying key components."""
+            elif step < input_data.steps - 1:
+                prompt = f"""Problem: {problem}{context_info}
+
+Previous reasoning:
+{current_analysis}
+
+Continue the reasoning process. What is the next logical step?"""
+            else:
+                prompt = f"""Problem: {problem}{context_info}
+
+Previous reasoning:
+{current_analysis}
+
+Provide the final conclusion and synthesize all previous reasoning steps into a coherent answer."""
+
+            # Request LLM sampling from the client
+            try:
+                response = await ctx.sample(
+                    messages=prompt,
+                    system_prompt="You are a systematic reasoner. Break down complex problems step by step.",
+                    temperature=0.7,
+                    max_tokens=500,
+                    include_context="thisServer"
+                )
+
+                step_result = response.text if hasattr(response, 'text') else str(response)
+                reasoning_steps.append(f"Step {step + 1}:\n{step_result}")
+                current_analysis += f"\n\nStep {step + 1}:\n{step_result}"
+
+            except Exception as e:
+                # Handle sampling errors gracefully
+                error_msg = f"Sampling failed at step {step + 1}: {str(e)}"
+                await ctx.error(error_msg)
+                reasoning_steps.append(f"Step {step + 1}: ERROR - {str(e)}")
+
+        await ctx.report_progress(progress=input_data.steps, total=input_data.steps)
+
+        # Compile the final result
+        result = f"""Multi-Step Reasoning Analysis
+{'=' * 50}
+
+Problem: {problem}
+{f'Context: {input_data.context}' if input_data.context else ''}
+
+Reasoning Process:
+{chr(10).join(reasoning_steps)}
+
+{'=' * 50}
+Reasoning complete. Used {input_data.steps} steps of analysis."""
+
+        return ToolResponse(
+            content=[
+                ToolContent(
+                    type="text",
+                    text=result
+                )
+            ]
+        )

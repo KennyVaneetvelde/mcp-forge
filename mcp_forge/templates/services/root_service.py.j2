@@ -1,0 +1,62 @@
+"""Service layer for managing roots."""
+from typing import List
+from fastmcp import FastMCP
+from pydantic import BaseModel, Field
+
+
+class RootDefinition(BaseModel):
+    """Definition of a root directory or URI."""
+    
+    uri: str = Field(description="URI of the root (must be file:// URI)")
+    name: str = Field(description="Human-readable name for the root")
+
+
+class RootService:
+    """Service for managing roots.
+    
+    Roots define the filesystem boundaries or context areas that the MCP server
+    can access. They help clients understand what directories or resources the
+    server is working with.
+    """
+
+    def __init__(self, roots: List[RootDefinition] = None):
+        """Initialize the root service.
+        
+        Args:
+            roots: Optional list of root definitions. If not provided, defaults to empty list.
+        """
+        self._roots: List[RootDefinition] = roots or []
+
+    def add_root(self, uri: str, name: str) -> None:
+        """Add a new root definition.
+        
+        Args:
+            uri: The file:// URI of the root
+            name: Human-readable name for the root
+        """
+        self._roots.append(RootDefinition(uri=uri, name=name))
+
+    def get_roots(self) -> List[RootDefinition]:
+        """Get all registered roots.
+        
+        Returns:
+            List of root definitions
+        """
+        return self._roots
+
+    def register_mcp_handlers(self, mcp: FastMCP) -> None:
+        """Register roots capability with FastMCP.
+        
+        This enables the client to query available roots via the roots/list endpoint.
+        """
+        @mcp.list_roots()
+        async def list_roots_handler():
+            """Handle roots/list requests from MCP clients.
+            
+            Returns:
+                List of root definitions with uri and name fields
+            """
+            return [
+                {"uri": root.uri, "name": root.name}
+                for root in self._roots
+            ]

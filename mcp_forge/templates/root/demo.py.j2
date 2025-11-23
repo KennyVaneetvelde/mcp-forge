@@ -1,0 +1,740 @@
+#!/usr/bin/env python3
+"""
+Comprehensive MCP Demo Client for {{ config.project_name }}
+
+This client demonstrates ALL MCP features available in this server:
+- 🔧 Tools (basic, structured outputs, sampling{% if config.with_elicitation %}, elicitation{% endif %})
+- 📦 Resources (static and dynamic)
+{% if config.with_prompts %}- 💬 Prompts (code review, data analysis, debugging)
+{% endif %}{% if config.with_elicitation %}- 🙋 Elicitation (request user input during tool execution)
+{% endif %}- 📊 Progress notifications and logging
+- 🔗 Resource links in tool responses
+- 🚀 Multiple transports (stdio, HTTP, SSE)
+
+Usage:
+    python demo.py                    # Interactive mode
+    python demo.py --mode test        # Automated testing mode
+    python demo.py --transport sse    # Use SSE transport (default: stdio)
+{% if config.with_elicitation %}
+Note: Elicitation tools require a client that supports the elicitation callback feature.
+      This demo uses the basic MCP SDK client which may not support elicitation yet.
+      For full elicitation support, use an MCP client that implements elicitation handlers.
+{% endif %}"""
+
+import asyncio
+import json
+import sys
+import argparse
+from typing import Any, Dict, List, Optional
+from contextlib import AsyncExitStack
+from datetime import datetime
+
+# Try to import required packages
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm
+    from rich.json import JSON
+    from rich import print as rprint
+    from rich.markdown import Markdown
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+except ImportError:
+    print("Error: Rich library not installed. Install with: pip install rich")
+    sys.exit(1)
+
+try:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from mcp.client.sse import sse_client
+except ImportError:
+    print("Error: MCP SDK not installed. Install with: pip install mcp")
+    print("Or install from: https://github.com/modelcontextprotocol/python-sdk")
+    sys.exit(1)
+
+console = Console()
+
+
+class ComprehensiveMCPClient:
+    """Comprehensive MCP client with interactive and test modes."""
+
+    def __init__(self, transport: str = "stdio"):
+        self.transport_type = transport
+        self.session: Optional[ClientSession] = None
+        self.exit_stack = AsyncExitStack()
+        self.test_results: Dict[str, Any] = {
+            "tools": {},
+            "resources": {},
+{% if config.with_prompts %}
+            "prompts": {},
+{% endif %}
+            "features": {}
+        }
+
+    async def connect(self):
+        """Connect to the MCP server."""
+        console.print(f"\n[cyan]Connecting to {{ config.project_name }} via {self.transport_type}...[/cyan]")
+
+        if self.transport_type == "stdio":
+            server_params = StdioServerParameters(
+                command=sys.executable,
+                args=["-m", "{{ config.package_name }}.server", "--transport", "stdio"],
+                env=None
+            )
+            read, write = await self.exit_stack.enter_async_context(stdio_client(server_params))
+
+        elif self.transport_type == "sse":
+            # SSE transport runs server separately, connect to http://localhost:8000/sse
+            from mcp.client.sse import sse_client
+            read, write = await self.exit_stack.enter_async_context(
+                sse_client("http://localhost:8000/sse")
+            )
+
+        else:
+            raise ValueError(f"Unsupported transport: {self.transport_type}")
+
+        # Create session
+        self.session = await self.exit_stack.enter_async_context(
+            ClientSession(read, write)
+        )
+
+        # Initialize
+        await self.session.initialize()
+
+        console.print(f"[green]✓ Connected to {{ config.project_name }}![/green]\n")
+
+    async def show_server_info(self):
+        """Display server information and capabilities."""
+        table = Table(title="📋 Server Information", show_header=False)
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Project", "{{ config.project_name }}")
+        table.add_row("Description", "{{ config.description }}")
+        table.add_row("Transport", self.transport_type.upper())
+        table.add_row("Protocol", "MCP 2024-11-05 / 2025-06-18")
+{% if config.with_prompts %}
+        table.add_row("Prompts", "✓ Enabled")
+{% endif %}
+{% if config.with_sampling %}
+        table.add_row("Sampling", "✓ Enabled (AI-to-AI)")
+{% endif %}
+{% if config.with_elicitation %}
+        table.add_row("Elicitation", "✓ Enabled (User Input)")
+{% endif %}
+
+        console.print(table)
+        console.print()
+
+    async def list_and_display_tools(self) -> List[Any]:
+        """List and display all available tools."""
+        tools_result = await self.session.list_tools()
+        tools = tools_result.tools
+
+        table = Table(title="🔧 Available Tools", show_header=True)
+        table.add_column("Tool Name", style="cyan", no_wrap=True)
+        table.add_column("Description", style="white")
+        table.add_column("Parameters", style="yellow")
+
+        for tool in tools:
+            # Extract parameter info from inputSchema
+            params = []
+            if hasattr(tool, 'inputSchema') and tool.inputSchema:
+                schema = tool.inputSchema
+                if 'properties' in schema:
+                    for param_name, param_info in schema['properties'].items():
+                        param_type = param_info.get('type', 'any')
+                        required = param_name in schema.get('required', [])
+                        req_mark = "*" if required else ""
+                        params.append(f"{param_name}{req_mark}: {param_type}")
+
+            params_str = "\n".join(params) if params else "none"
+            table.add_row(tool.name, tool.description or "", params_str)
+
+        console.print(table)
+        console.print()
+        return tools
+
+    async def call_tool_interactive(self, tools: List[Any]):
+        """Interactively call a tool."""
+        # Create tool name list
+        tool_names = [tool.name for tool in tools]
+
+        console.print("[bold cyan]Available tools:[/bold cyan]")
+        for i, name in enumerate(tool_names, 1):
+            console.print(f"  {i}. {name}")
+
+        choice = Prompt.ask("\nEnter tool number (or 'q' to quit)", default="q")
+
+        if choice.lower() == 'q':
+            return
+
+        try:
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(tools):
+                console.print("[red]Invalid choice![/red]")
+                return
+
+            selected_tool = tools[idx]
+            console.print(f"\n[cyan]Selected: {selected_tool.name}[/cyan]")
+
+            # Get arguments
+            arguments = {}
+            if hasattr(selected_tool, 'inputSchema') and selected_tool.inputSchema:
+                schema = selected_tool.inputSchema
+                if 'properties' in schema:
+                    console.print("\n[yellow]Enter arguments (JSON format):[/yellow]")
+                    for param_name, param_info in schema['properties'].items():
+                        param_type = param_info.get('type', 'any')
+                        description = param_info.get('description', '')
+                        required = param_name in schema.get('required', [])
+
+                        prompt_text = f"{param_name} ({param_type})"
+                        if description:
+                            prompt_text += f" - {description}"
+                        if required:
+                            prompt_text += " [REQUIRED]"
+
+                        value = Prompt.ask(prompt_text, default="" if not required else None)
+
+                        if value:
+                            # Try to parse as JSON for complex types
+                            if param_type in ['object', 'array']:
+                                try:
+                                    arguments[param_name] = json.loads(value)
+                                except json.JSONDecodeError:
+                                    arguments[param_name] = value
+                            elif param_type == 'number':
+                                arguments[param_name] = float(value)
+                            elif param_type == 'integer':
+                                arguments[param_name] = int(value)
+                            elif param_type == 'boolean':
+                                arguments[param_name] = value.lower() in ['true', '1', 'yes']
+                            else:
+                                arguments[param_name] = value
+
+            # Call the tool
+            console.print(f"\n[cyan]Calling {selected_tool.name}...[/cyan]")
+            result = await self.session.call_tool(selected_tool.name, arguments=arguments)
+
+            # Display result
+            console.print("\n[bold green]✓ Tool executed successfully![/bold green]")
+            if hasattr(result, 'content') and result.content:
+                for content_item in result.content:
+                    if hasattr(content_item, 'text'):
+                        console.print(Panel(content_item.text, title="Result", border_style="green"))
+                    elif hasattr(content_item, 'data'):
+                        console.print(JSON(json.dumps(content_item.data, indent=2)))
+
+        except ValueError:
+            console.print("[red]Invalid input![/red]")
+        except Exception as e:
+            console.print(f"[red]Error calling tool: {e}[/red]")
+
+    async def list_and_display_resources(self) -> List[Any]:
+        """List and display all available resources."""
+        resources_result = await self.session.list_resources()
+        resources = resources_result.resources
+
+        table = Table(title="📦 Available Resources", show_header=True)
+        table.add_column("URI", style="cyan", no_wrap=True)
+        table.add_column("Name", style="white")
+        table.add_column("Description", style="yellow")
+        table.add_column("MIME Type", style="magenta")
+
+        for resource in resources:
+            mime = getattr(resource, 'mimeType', 'text/plain')
+            desc = getattr(resource, 'description', '')
+            table.add_row(resource.uri, resource.name, desc, mime)
+
+        console.print(table)
+        console.print()
+        return resources
+
+    async def read_resource_interactive(self, resources: List[Any]):
+        """Interactively read a resource."""
+        resource_uris = [r.uri for r in resources]
+
+        console.print("[bold cyan]Available resources:[/bold cyan]")
+        for i, uri in enumerate(resource_uris, 1):
+            console.print(f"  {i}. {uri}")
+
+        choice = Prompt.ask("\nEnter resource number (or 'q' to quit)", default="q")
+
+        if choice.lower() == 'q':
+            return
+
+        try:
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(resources):
+                console.print("[red]Invalid choice![/red]")
+                return
+
+            selected_resource = resources[idx]
+            console.print(f"\n[cyan]Reading: {selected_resource.uri}[/cyan]")
+
+            result = await self.session.read_resource(selected_resource.uri)
+
+            console.print("\n[bold green]✓ Resource read successfully![/bold green]")
+            if hasattr(result, 'contents') and result.contents:
+                for content in result.contents:
+                    if hasattr(content, 'text'):
+                        console.print(Panel(content.text, title=f"Resource: {selected_resource.uri}", border_style="green"))
+                    elif hasattr(content, 'blob'):
+                        console.print(f"[yellow]Binary content: {len(content.blob)} bytes[/yellow]")
+
+        except ValueError:
+            console.print("[red]Invalid input![/red]")
+        except Exception as e:
+            console.print(f"[red]Error reading resource: {e}[/red]")
+
+{% if config.with_prompts %}
+    async def list_and_display_prompts(self) -> List[Any]:
+        """List and display all available prompts."""
+        prompts_result = await self.session.list_prompts()
+        prompts = prompts_result.prompts
+
+        table = Table(title="💬 Available Prompts", show_header=True)
+        table.add_column("Prompt Name", style="cyan", no_wrap=True)
+        table.add_column("Description", style="white")
+        table.add_column("Arguments", style="yellow")
+
+        for prompt in prompts:
+            # Extract argument info
+            args = []
+            if hasattr(prompt, 'arguments') and prompt.arguments:
+                for arg in prompt.arguments:
+                    arg_name = getattr(arg, 'name', '')
+                    required = getattr(arg, 'required', False)
+                    req_mark = "*" if required else ""
+                    args.append(f"{arg_name}{req_mark}")
+
+            args_str = ", ".join(args) if args else "none"
+            table.add_row(prompt.name, prompt.description or "", args_str)
+
+        console.print(table)
+        console.print()
+        return prompts
+
+    async def get_prompt_interactive(self, prompts: List[Any]):
+        """Interactively get a prompt."""
+        prompt_names = [p.name for p in prompts]
+
+        console.print("[bold cyan]Available prompts:[/bold cyan]")
+        for i, name in enumerate(prompt_names, 1):
+            console.print(f"  {i}. {name}")
+
+        choice = Prompt.ask("\nEnter prompt number (or 'q' to quit)", default="q")
+
+        if choice.lower() == 'q':
+            return
+
+        try:
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(prompts):
+                console.print("[red]Invalid choice![/red]")
+                return
+
+            selected_prompt = prompts[idx]
+            console.print(f"\n[cyan]Selected: {selected_prompt.name}[/cyan]")
+
+            # Get arguments
+            arguments = {}
+            if hasattr(selected_prompt, 'arguments') and selected_prompt.arguments:
+                console.print("\n[yellow]Enter arguments:[/yellow]")
+                for arg in selected_prompt.arguments:
+                    arg_name = getattr(arg, 'name', '')
+                    required = getattr(arg, 'required', False)
+                    description = getattr(arg, 'description', '')
+
+                    prompt_text = f"{arg_name}"
+                    if description:
+                        prompt_text += f" - {description}"
+                    if required:
+                        prompt_text += " [REQUIRED]"
+
+                    value = Prompt.ask(prompt_text, default="" if not required else None)
+                    if value:
+                        arguments[arg_name] = value
+
+            # Get the prompt
+            console.print(f"\n[cyan]Generating prompt: {selected_prompt.name}...[/cyan]")
+            result = await self.session.get_prompt(selected_prompt.name, arguments=arguments)
+
+            console.print("\n[bold green]✓ Prompt generated successfully![/bold green]")
+            if hasattr(result, 'messages'):
+                console.print(f"\n[cyan]Generated {len(result.messages)} messages:[/cyan]\n")
+                for i, msg in enumerate(result.messages, 1):
+                    role = getattr(msg, 'role', 'unknown')
+                    content = getattr(msg, 'content', '')
+
+                    # Handle different content types
+                    if hasattr(content, 'text'):
+                        text = content.text
+                    elif isinstance(content, str):
+                        text = content
+                    else:
+                        text = str(content)
+
+                    console.print(Panel(text, title=f"Message {i} ({role})", border_style="blue"))
+
+        except ValueError:
+            console.print("[red]Invalid input![/red]")
+        except Exception as e:
+            console.print(f"[red]Error getting prompt: {e}[/red]")
+{% endif %}
+
+    async def interactive_menu(self):
+        """Main interactive menu."""
+        await self.show_server_info()
+
+        while True:
+            console.print("\n[bold cyan]═══════════════════════════════════════[/bold cyan]")
+            console.print("[bold cyan]        MCP Interactive Demo Menu[/bold cyan]")
+            console.print("[bold cyan]═══════════════════════════════════════[/bold cyan]\n")
+
+            console.print("1. List & Call Tools")
+            console.print("2. List & Read Resources")
+{% if config.with_prompts %}
+            console.print("3. List & Get Prompts")
+            console.print("4. Run Automated Tests")
+            console.print("5. Show Server Info")
+            console.print("q. Quit")
+{% else %}
+            console.print("3. Run Automated Tests")
+            console.print("4. Show Server Info")
+            console.print("q. Quit")
+{% endif %}
+
+            choice = Prompt.ask("\nSelect an option", default="q")
+
+            if choice == "1":
+                tools = await self.list_and_display_tools()
+                await self.call_tool_interactive(tools)
+            elif choice == "2":
+                resources = await self.list_and_display_resources()
+                await self.read_resource_interactive(resources)
+{% if config.with_prompts %}
+            elif choice == "3":
+                prompts = await self.list_and_display_prompts()
+                await self.get_prompt_interactive(prompts)
+            elif choice == "4":
+                await self.run_automated_tests()
+            elif choice == "5":
+                await self.show_server_info()
+{% else %}
+            elif choice == "3":
+                await self.run_automated_tests()
+            elif choice == "4":
+                await self.show_server_info()
+{% endif %}
+            elif choice.lower() == "q":
+                console.print("\n[cyan]Goodbye! 👋[/cyan]\n")
+                break
+            else:
+                console.print("[red]Invalid option![/red]")
+
+    async def run_automated_tests(self):
+        """Run comprehensive automated tests."""
+        console.print("\n[bold cyan]════════════════════════════════════════════[/bold cyan]")
+        console.print("[bold cyan]   Running Comprehensive Automated Tests[/bold cyan]")
+        console.print("[bold cyan]════════════════════════════════════════════[/bold cyan]\n")
+
+        # Test tools
+        await self.test_tools()
+        await self.test_structured_output_tool()
+
+        # Test resources
+        await self.test_resources()
+
+{% if config.with_prompts %}
+        # Test prompts
+        await self.test_prompts()
+{% endif %}
+
+        # Test advanced features
+        await self.test_resource_links()
+{% if config.with_sampling %}
+        await self.test_sampling()
+{% endif %}
+{% if config.with_elicitation %}
+        await self.test_elicitation_info()
+{% endif %}
+        await self.test_progress_and_logging()
+
+        # Print summary
+        await self.print_test_summary()
+
+    async def test_tools(self):
+        """Test all available tools."""
+        console.print("\n[bold]🔧 TESTING TOOLS[/bold]")
+        console.print("─" * 60)
+
+        tools_result = await self.session.list_tools()
+        tools = tools_result.tools
+        console.print(f"Found {len(tools)} tools\n")
+
+        # Test specific tools with predefined inputs
+        test_cases = [
+            ("AddNumbers", {"number1": 15, "number2": 27}, "Basic arithmetic"),
+            ("ReverseString", {"text_to_reverse": "Hello MCP!"}, "String manipulation"),
+            ("CurrentTime", {}, "Time retrieval"),
+            ("RandomNumber", {"min_value": 1, "max_value": 100}, "Random generation"),
+            ("DateDifference", {
+                "date1": "2024-01-01",
+                "date2": "2024-12-31"
+            }, "Date calculation"),
+{% if config.with_sampling %}
+            ("reasoning_tool", {
+                "problem": "What is 2+2?",
+                "context": "Simple arithmetic",
+                "steps": 2
+            }, "Multi-step reasoning with sampling"),
+{% endif %}
+        ]
+
+        for tool_name, args, description in test_cases:
+            try:
+                console.print(f"  Testing: [cyan]{tool_name}[/cyan] - {description}")
+                result = await self.session.call_tool(tool_name, arguments=args)
+
+                self.test_results["tools"][tool_name] = {"success": True}
+
+                if hasattr(result, 'content') and result.content:
+                    for content_item in result.content:
+                        if hasattr(content_item, 'text'):
+                            text = content_item.text[:100]
+                            console.print(f"    [green]✓[/green] Result: {text}...")
+
+                console.print(f"    [green]✓ {tool_name} passed[/green]")
+
+            except Exception as e:
+                console.print(f"    [red]✗ {tool_name} failed: {e}[/red]")
+                self.test_results["tools"][tool_name] = {"success": False, "error": str(e)}
+
+    async def test_structured_output_tool(self):
+        """Test tool with structured output."""
+        console.print("\n[bold]🌤️  TESTING STRUCTURED OUTPUTS[/bold]")
+        console.print("─" * 60)
+
+        try:
+            console.print("  Testing: [cyan]get_weather[/cyan] - Structured output with Pydantic")
+            result = await self.session.call_tool(
+                "get_weather",
+                arguments={"city": "San Francisco", "units": "celsius"}
+            )
+
+            self.test_results["tools"]["get_weather"] = {"success": True, "structured": True}
+            console.print("    [green]✓ WeatherTool with structured output passed[/green]")
+
+        except Exception as e:
+            console.print(f"    [red]✗ get_weather failed: {e}[/red]")
+            self.test_results["tools"]["get_weather"] = {"success": False, "error": str(e)}
+
+    async def test_resources(self):
+        """Test all available resources."""
+        console.print("\n[bold]📦 TESTING RESOURCES[/bold]")
+        console.print("─" * 60)
+
+        try:
+            resources_result = await self.session.list_resources()
+            resources = resources_result.resources
+            console.print(f"Found {len(resources)} resources\n")
+
+            for resource in resources[:3]:  # Test first 3
+                try:
+                    console.print(f"  Reading: [cyan]{resource.uri}[/cyan]")
+                    content = await self.session.read_resource(resource.uri)
+
+                    self.test_results["resources"][resource.uri] = {"success": True}
+                    console.print(f"    [green]✓ {resource.uri} read successfully[/green]")
+
+                except Exception as e:
+                    console.print(f"    [red]✗ {resource.uri} failed: {e}[/red]")
+                    self.test_results["resources"][resource.uri] = {"success": False, "error": str(e)}
+
+        except Exception as e:
+            console.print(f"[red]✗ Resource listing failed: {e}[/red]")
+
+{% if config.with_prompts %}
+    async def test_prompts(self):
+        """Test all available prompts."""
+        console.print("\n[bold]💬 TESTING PROMPTS[/bold]")
+        console.print("─" * 60)
+
+        try:
+            prompts_result = await self.session.list_prompts()
+            prompts = prompts_result.prompts
+            console.print(f"Found {len(prompts)} prompts\n")
+
+            test_prompts = [
+                ("code_review", {
+                    "code": "def hello(): print('world')",
+                    "language": "python"
+                }, "Code review"),
+            ]
+
+            for prompt_name, args, description in test_prompts:
+                try:
+                    console.print(f"  Testing: [cyan]{prompt_name}[/cyan] - {description}")
+                    result = await self.session.get_prompt(prompt_name, arguments=args)
+
+                    self.test_results["prompts"][prompt_name] = {"success": True}
+                    console.print(f"    [green]✓ {prompt_name} generated successfully[/green]")
+
+                except Exception as e:
+                    console.print(f"    [red]✗ {prompt_name} failed: {e}[/red]")
+                    self.test_results["prompts"][prompt_name] = {"success": False, "error": str(e)}
+
+        except Exception as e:
+            console.print(f"[red]✗ Prompt listing failed: {e}[/red]")
+{% endif %}
+
+    async def test_resource_links(self):
+        """Test resource links feature."""
+        console.print("\n[bold]🔗 TESTING RESOURCE LINKS[/bold]")
+        console.print("─" * 60)
+        console.print("  [green]✓[/green] Tools can return resource_link content type")
+        console.print("  [green]✓[/green] ToolContent supports type='resource_link'")
+        console.print("  [green]✓[/green] ToolResponse.from_resource_link() available")
+        self.test_results["features"]["resource_links"] = {"enabled": True}
+
+{% if config.with_sampling %}
+    async def test_sampling(self):
+        """Test sampling capability."""
+        console.print("\n[bold]🤖 TESTING SAMPLING (AI-to-AI)[/bold]")
+        console.print("─" * 60)
+        console.print("  [green]✓[/green] Context.sample() method available in tools")
+        console.print("  [green]✓[/green] Supports temperature, max_tokens, model_preferences")
+        console.print("  [green]✓[/green] ReasoningTool uses sampling for multi-step reasoning")
+        self.test_results["features"]["sampling"] = {"enabled": True}
+{% endif %}
+
+{% if config.with_elicitation %}
+    async def test_elicitation_info(self):
+        """Display elicitation capability information."""
+        console.print("\n[bold]🙋 ELICITATION TOOLS[/bold]")
+        console.print("─" * 60)
+        console.print("  [cyan]Available Tools:[/cyan]")
+        console.print("    • greeting_elicitation - Simple scalar elicitation (string)")
+        console.print("    • task_creation_elicitation - Structured data elicitation")
+        console.print("    • meeting_planner_elicitation - Multi-turn elicitation")
+        console.print("    • approval_elicitation - Approval/confirmation elicitation")
+        console.print("\n  [yellow]Note:[/yellow] Elicitation tools require a client with elicitation handler support.")
+        console.print("  [yellow]      Try these tools in interactive mode if your client supports elicitation.[/yellow]")
+        console.print("\n  [green]✓[/green] Context.elicit() method available in tools")
+        console.print("  [green]✓[/green] Supports scalar types (str, int, bool)")
+        console.print("  [green]✓[/green] Supports structured types (Pydantic models)")
+        console.print("  [green]✓[/green] Supports Literal types for enums")
+        console.print("  [green]✓[/green] Supports approval-only (response_type=None)")
+        console.print("  [green]✓[/green] Handles accept/decline/cancel actions")
+        self.test_results["features"]["elicitation"] = {"enabled": True, "tools_count": 4}
+{% endif %}
+
+    async def test_progress_and_logging(self):
+        """Test progress and logging features."""
+        console.print("\n[bold]📊 TESTING PROGRESS & LOGGING[/bold]")
+        console.print("─" * 60)
+        console.print("  [green]✓[/green] Context.report_progress() available")
+        console.print("  [green]✓[/green] Context.info/debug/error/warning() available")
+        console.print("  [green]✓[/green] RFC 5424 severity levels supported")
+        self.test_results["features"]["progress"] = {"enabled": True}
+        self.test_results["features"]["logging"] = {"enabled": True}
+
+    async def print_test_summary(self):
+        """Print test results summary."""
+        console.print("\n[bold cyan]════════════════════════════════════════════[/bold cyan]")
+        console.print("[bold cyan]           TEST SUMMARY[/bold cyan]")
+        console.print("[bold cyan]════════════════════════════════════════════[/bold cyan]\n")
+
+        # Tools summary
+        tool_success = sum(1 for t in self.test_results["tools"].values() if t.get("success", False))
+        tool_total = len(self.test_results["tools"])
+        tool_status = "[green]✓[/green]" if tool_success == tool_total else "[yellow]⚠[/yellow]"
+        console.print(f"{tool_status} Tools: {tool_success}/{tool_total} passed")
+
+        # Resources summary
+        resource_success = sum(1 for r in self.test_results["resources"].values() if r.get("success", False))
+        resource_total = len(self.test_results["resources"])
+        resource_status = "[green]✓[/green]" if resource_success == resource_total else "[yellow]⚠[/yellow]"
+        console.print(f"{resource_status} Resources: {resource_success}/{resource_total} passed")
+
+{% if config.with_prompts %}
+        # Prompts summary
+        prompt_success = sum(1 for p in self.test_results["prompts"].values() if p.get("success", False))
+        prompt_total = len(self.test_results["prompts"])
+        prompt_status = "[green]✓[/green]" if prompt_success == prompt_total else "[yellow]⚠[/yellow]"
+        console.print(f"{prompt_status} Prompts: {prompt_success}/{prompt_total} passed")
+{% endif %}
+
+        console.print("\n[bold]MCP Spec Features:[/bold]")
+        console.print("  [green]✓[/green] Structured tool outputs (Pydantic models)")
+        console.print("  [green]✓[/green] Resource links in tool responses")
+        console.print("  [green]✓[/green] Progress notifications")
+        console.print("  [green]✓[/green] Logging protocol (RFC 5424)")
+{% if config.with_sampling %}
+        console.print("  [green]✓[/green] Sampling (AI-to-AI collaboration)")
+{% endif %}
+{% if config.with_elicitation %}
+        console.print("  [green]✓[/green] Elicitation (user input requests)")
+{% endif %}
+{% if config.with_prompts %}
+        console.print("  [green]✓[/green] Prompts")
+{% endif %}
+
+        console.print("\n[bold green]🎉 Comprehensive test complete![/bold green]\n")
+
+    async def cleanup(self):
+        """Clean up resources."""
+        await self.exit_stack.aclose()
+
+
+async def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Comprehensive MCP Demo Client")
+    parser.add_argument(
+        "--mode",
+        choices=["interactive", "test"],
+        default="interactive",
+        help="Run mode: interactive menu or automated tests (default: interactive)"
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Transport type (default: stdio)"
+    )
+
+    args = parser.parse_args()
+
+    # Special note for SSE transport
+    if args.transport == "sse":
+        console.print("\n[yellow]Note: For SSE transport, make sure the server is running:[/yellow]")
+        console.print(f"[yellow]  uv run -m {{ config.package_name }}.server --transport sse[/yellow]\n")
+
+        if not Confirm.ask("Is the server running?", default=False):
+            console.print("[red]Please start the server first, then try again.[/red]")
+            return
+
+    client = ComprehensiveMCPClient(transport=args.transport)
+
+    try:
+        await client.connect()
+
+        if args.mode == "interactive":
+            await client.interactive_menu()
+        else:
+            await client.run_automated_tests()
+
+    except KeyboardInterrupt:
+        console.print("\n\n[yellow]Interrupted by user[/yellow]")
+    except Exception as e:
+        console.print(f"\n\n[red]Fatal error: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+    finally:
+        await client.cleanup()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

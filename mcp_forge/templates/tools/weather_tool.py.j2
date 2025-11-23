@@ -1,0 +1,130 @@
+"""Weather tool implementation with structured output."""
+from typing import List, Literal
+from pydantic import BaseModel, Field
+from {{ config.package_name }}.interfaces.tool import Tool, ToolResponse, BaseToolInput
+
+
+class WeatherToolInput(BaseToolInput):
+    """Input model for weather tool."""
+
+    city: str = Field(description="City name to get weather for")
+    units: Literal["celsius", "fahrenheit"] = Field(
+        default="celsius",
+        description="Temperature units to use"
+    )
+
+
+class WeatherCondition(BaseModel):
+    """Model for weather conditions."""
+
+    temperature: float = Field(description="Current temperature")
+    feels_like: float = Field(description="Feels like temperature")
+    humidity: int = Field(description="Humidity percentage", ge=0, le=100)
+    condition: str = Field(description="Weather condition (e.g., sunny, cloudy, rainy)")
+    wind_speed: float = Field(description="Wind speed in km/h or mph")
+
+
+class WeatherForecast(BaseModel):
+    """Model for weather forecast day."""
+
+    day: str = Field(description="Day of week")
+    high: float = Field(description="High temperature")
+    low: float = Field(description="Low temperature")
+    condition: str = Field(description="Expected weather condition")
+    precipitation_chance: int = Field(description="Chance of precipitation (%)", ge=0, le=100)
+
+
+class WeatherOutput(BaseModel):
+    """Structured output model for weather tool.
+
+    This demonstrates how to use Pydantic models for structured outputs.
+    FastMCP will automatically generate the JSON schema from this model
+    and include it in the tool definition.
+    """
+
+    city: str = Field(description="City name")
+    country: str = Field(description="Country code")
+    units: str = Field(description="Temperature units used")
+    current: WeatherCondition = Field(description="Current weather conditions")
+    forecast: List[WeatherForecast] = Field(description="5-day weather forecast")
+    last_updated: str = Field(description="Last update timestamp")
+
+
+class WeatherTool(Tool):
+    """Tool that returns structured weather data.
+
+    This tool demonstrates the use of structured outputs with Pydantic models.
+    The output_model defines the exact structure of the response, which:
+    - Provides type safety
+    - Enables automatic validation
+    - Generates JSON schema for clients
+    - Allows clients to parse responses reliably
+    """
+
+    name = "get_weather"
+    description = "Get current weather and 5-day forecast for a city (demo tool with mock data)"
+    input_model = WeatherToolInput
+    output_model = WeatherOutput  # This enables structured output!
+
+    async def execute(self, input_data: WeatherToolInput) -> ToolResponse:
+        """Execute the weather tool with mock data.
+
+        In a real implementation, this would call a weather API.
+        For now, we return realistic mock data to demonstrate structured outputs.
+        """
+
+        # Mock data demonstrating structured output
+        weather_data = WeatherOutput(
+            city=input_data.city,
+            country="US",  # Mock country
+            units=input_data.units,
+            current=WeatherCondition(
+                temperature=22.5 if input_data.units == "celsius" else 72.5,
+                feels_like=21.0 if input_data.units == "celsius" else 70.0,
+                humidity=65,
+                condition="Partly Cloudy",
+                wind_speed=15.3 if input_data.units == "celsius" else 9.5
+            ),
+            forecast=[
+                WeatherForecast(
+                    day="Monday",
+                    high=25.0 if input_data.units == "celsius" else 77.0,
+                    low=18.0 if input_data.units == "celsius" else 64.0,
+                    condition="Sunny",
+                    precipitation_chance=10
+                ),
+                WeatherForecast(
+                    day="Tuesday",
+                    high=23.0 if input_data.units == "celsius" else 73.0,
+                    low=17.0 if input_data.units == "celsius" else 63.0,
+                    condition="Partly Cloudy",
+                    precipitation_chance=20
+                ),
+                WeatherForecast(
+                    day="Wednesday",
+                    high=20.0 if input_data.units == "celsius" else 68.0,
+                    low=15.0 if input_data.units == "celsius" else 59.0,
+                    condition="Cloudy",
+                    precipitation_chance=45
+                ),
+                WeatherForecast(
+                    day="Thursday",
+                    high=19.0 if input_data.units == "celsius" else 66.0,
+                    low=14.0 if input_data.units == "celsius" else 57.0,
+                    condition="Rainy",
+                    precipitation_chance=80
+                ),
+                WeatherForecast(
+                    day="Friday",
+                    high=21.0 if input_data.units == "celsius" else 70.0,
+                    low=16.0 if input_data.units == "celsius" else 61.0,
+                    condition="Partly Cloudy",
+                    precipitation_chance=30
+                ),
+            ],
+            last_updated="2025-01-22T14:30:00Z"
+        )
+
+        # Return the response with the model
+        # ToolService will extract this and return it as structured output
+        return ToolResponse.from_model(weather_data)

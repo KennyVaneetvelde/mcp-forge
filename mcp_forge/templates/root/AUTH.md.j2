@@ -1,0 +1,334 @@
+# OAuth 2.1 Authentication for {{ config.project_name }}
+
+This MCP server includes OAuth 2.1 authentication support following the [MCP Authorization Specification](https://spec.modelcontextprotocol.io/specification/basic/authorization/).
+
+## Overview
+
+The authentication implementation follows these RFCs and specifications:
+- **OAuth 2.1** - Modern OAuth standard with PKCE required
+- **RFC 6750** - Bearer Token Usage
+- **RFC 8414** - OAuth 2.0 Authorization Server Metadata
+- **RFC 9470** - OAuth 2.0 Protected Resource Metadata
+- **MCP Specification** - Model Context Protocol Authorization Requirements
+
+## Quick Start
+
+### 1. Enable Authentication
+
+Edit `auth_config.py` and set:
+
+```python
+AUTH_ENABLED = True  # Enable OAuth 2.1 authentication
+```
+
+### 2. Configure Your OAuth Provider
+
+Update the OAuth endpoints in `auth_config.py`:
+
+```python
+ISSUER = "https://your-auth-provider.com"
+AUTHORIZATION_ENDPOINT = f"{ISSUER}/authorize"
+TOKEN_ENDPOINT = f"{ISSUER}/token"
+JWKS_URI = f"{ISSUER}/jwks"
+```
+
+### 3. Define Scopes
+
+Customize the scopes in `auth_config.py` based on your requirements:
+
+```python
+SUPPORTED_SCOPES = [
+    "tools:list",
+    "tools:call",
+    "resources:list",
+    "resources:read",
+    # ... add your custom scopes
+]
+```
+
+## Development/Testing
+
+For local development, the server includes a test token generator:
+
+### Generate a Test Token
+
+```bash
+curl -X POST http://localhost:8000/dev/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scopes": ["tools:list", "tools:call", "resources:read"],
+    "expires_in": 3600
+  }'
+```
+
+Response:
+```json
+{
+  "access_token": "eyJhbGci...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "tools:list tools:call resources:read"
+}
+```
+
+### Using the Token
+
+Include the token in the `Authorization` header:
+
+```bash
+curl http://localhost:8000/mcp/tools/list \
+  -H "Authorization: Bearer eyJhbGci..."
+```
+
+## Metadata Discovery
+
+The server exposes standard OAuth discovery endpoints:
+
+### Authorization Server Metadata (RFC 8414)
+
+```
+GET /.well-known/oauth-authorization-server
+```
+
+Response:
+```json
+{
+  "issuer": "https://your-auth-provider.com",
+  "authorization_endpoint": "https://your-auth-provider.com/authorize",
+  "token_endpoint": "https://your-auth-provider.com/token",
+  "jwks_uri": "https://your-auth-provider.com/jwks",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code"],
+  "code_challenge_methods_supported": ["S256"]
+}
+```
+
+### Protected Resource Metadata (RFC 9470)
+
+```
+GET /.well-known/oauth-protected-resource
+```
+
+Response:
+```json
+{
+  "resource": "https://mcp.example.com",
+  "authorization_servers": ["https://your-auth-provider.com"],
+  "scopes_supported": ["tools:list", "tools:call", ...]
+}
+```
+
+## Error Responses
+
+### 401 Unauthorized (Invalid/Expired Token)
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="mcp-server",
+                         error="invalid_token",
+                         error_description="The access token is invalid or expired.",
+                         resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"
+```
+
+### 403 Forbidden (Insufficient Scope)
+
+```http
+HTTP/1.1 403 Forbidden
+WWW-Authenticate: Bearer error="insufficient_scope",
+                         scope="resources:read resources:write",
+                         resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource",
+                         error_description="Additional resource write permission required"
+```
+
+## Integration with External OAuth Providers
+
+### Auth0 Example
+
+1. Create an Auth0 application
+2. Configure `auth_config.py`:
+
+```python
+ISSUER = "https://YOUR_DOMAIN.auth0.com"
+AUTHORIZATION_ENDPOINT = f"{ISSUER}/authorize"
+TOKEN_ENDPOINT = f"{ISSUER}/oauth/token"
+JWKS_URI = f"{ISSUER}/.well-known/jwks.json"
+```
+
+3. Implement a custom token validator:
+
+```python
+import httpx
+from {{ config.package_name }}.services.auth_service import AccessToken
+from datetime import datetime, timedelta
+
+async def validate_auth0_token(token: str) -> Optional[AccessToken]:
+    """Validate token with Auth0."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{ISSUER}/userinfo",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            
+            if response.status_code == 200:
+                user_info = response.json()
+                scopes = user_info.get("scope", "").split()
+                
+                return AccessToken(
+                    token=token,
+                    scopes=scopes,
+                    expires_at=datetime.utcnow() + timedelta(hours=1),
+                    resource=RESOURCE_ID
+                )
+    except Exception:
+        pass
+    
+    return None
+
+# Register the validator in your server setup
+auth_service.register_token_validator(validate_auth0_token)
+```
+
+### Okta Example
+
+Similar to Auth0, but with Okta endpoints:
+
+```python
+ISSUER = "https://YOUR_DOMAIN.okta.com/oauth2/default"
+AUTHORIZATION_ENDPOINT = f"{ISSUER}/v1/authorize"
+TOKEN_ENDPOINT = f"{ISSUER}/v1/token"
+JWKS_URI = f"{ISSUER}/v1/keys"
+```
+
+### Keycloak Example
+
+For self-hosted Keycloak:
+
+```python
+ISSUER = "https://keycloak.example.com/realms/YOUR_REALM"
+AUTHORIZATION_ENDPOINT = f"{ISSUER}/protocol/openid-connect/auth"
+TOKEN_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token"
+JWKS_URI = f"{ISSUER}/protocol/openid-connect/certs"
+```
+
+## Scope-Based Access Control
+
+### Protecting Specific Endpoints
+
+Use the `@require_scopes` decorator:
+
+```python
+from {{ config.package_name }}.auth_middleware import require_scopes
+from fastapi import Request
+
+@app.get("/admin/settings")
+@require_scopes("server:admin")
+async def get_admin_settings(request: Request):
+    # Only accessible with server:admin scope
+    access_token = request.state.access_token
+    return {"settings": {...}}
+```
+
+### Checking Scopes in Tools
+
+```python
+class AdminTool(Tool):
+    async def execute(self, input_data, ctx):
+        # Access token is available in ctx
+        access_token = getattr(ctx.request.state, "access_token", None)
+        
+        if not access_token or not access_token.has_scope("server:admin"):
+            raise PermissionError("Admin scope required")
+        
+        # Tool logic here
+        ...
+```
+
+## Production Deployment
+
+### Security Checklist
+
+- [ ] Set `AUTH_ENABLED = True`
+- [ ] Set `DEV_MODE = False`
+- [ ] Set `DEV_TEST_TOKENS_ENABLED = False`
+- [ ] Use HTTPS for all endpoints
+- [ ] Configure proper OAuth provider (Auth0, Okta, etc.)
+- [ ] Validate token signatures using JWKS
+- [ ] Implement proper token introspection
+- [ ] Use short-lived tokens (1 hour max)
+- [ ] Implement token refresh mechanisms
+- [ ] Log all authentication failures
+- [ ] Rate-limit token endpoints
+
+### Environment Variables
+
+For sensitive configuration, use environment variables:
+
+```bash
+export OAUTH_ISSUER="https://auth.example.com"
+export OAUTH_CLIENT_ID="your-client-id"
+export OAUTH_CLIENT_SECRET="your-client-secret"
+```
+
+Load in `auth_config.py`:
+
+```python
+import os
+
+ISSUER = os.getenv("OAUTH_ISSUER", "https://auth.example.com")
+CLIENT_ID = os.getenv("OAUTH_CLIENT_ID")
+CLIENT_SECRET = os.getenv("OAUTH_CLIENT_SECRET")
+```
+
+## Architecture
+
+```
+┌─────────────────┐
+│  MCP Client     │
+│ (Claude, etc.)  │
+└────────┬────────┘
+         │ 1. Request with Bearer token
+         │
+         ▼
+┌─────────────────────────────────┐
+│    Auth Middleware              │
+│  - Extract Authorization header │
+│  - Validate token               │
+│  - Check scopes                 │
+│  - Return 401/403 if invalid    │
+└────────┬────────────────────────┘
+         │ 2. Attach access_token to request
+         │
+         ▼
+┌─────────────────────────────────┐
+│    MCP Server                   │
+│  - Process request              │
+│  - Use scopes for authorization │
+└─────────────────────────────────┘
+```
+
+## Troubleshooting
+
+### "Missing Authorization header"
+
+Ensure your client sends the `Authorization: Bearer <token>` header with every request.
+
+### "The access token is invalid or expired"
+
+Generate a new token or refresh your existing token using your OAuth provider.
+
+### "Insufficient scope"
+
+The token doesn't have the required scopes. Request a new token with the necessary scopes.
+
+### Metadata endpoints not working
+
+Ensure the paths in `EXEMPT_PATHS` include the well-known endpoints.
+
+## References
+
+- [MCP Authorization Specification](https://spec.modelcontextprotocol.io/specification/basic/authorization/)
+- [OAuth 2.1](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10)
+- [RFC 6750 - Bearer Token Usage](https://datatracker.ietf.org/doc/html/rfc6750)
+- [RFC 8414 - OAuth 2.0 Authorization Server Metadata](https://datatracker.ietf.org/doc/html/rfc8414)
+- [RFC 9470 - OAuth 2.0 Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9470)

@@ -1,388 +1,516 @@
-# MCP-Forge 🔨
+<div align="center">
 
-MCP-Forge is a modern scaffolding tool for quickly bootstrapping Model Context Protocol (MCP) server projects in Python. It generates well-structured projects following the latest MCP specifications (2025-03-26) with FastMCP 2.0 integration.
+<img src="docs/images/banner.png" alt="MCP Forge Banner" width="100%" />
 
-> 📢 **Version 0.3.0**: Major update with improved architecture, dual transport support, and FastMCP integration.
+# 🔨 MCP Forge
 
-## Support Development
+### *The Ultimate Scaffolding Tool for Model Context Protocol Servers*
 
-If you find this project useful, please consider supporting its development:
+[![PyPI version](https://img.shields.io/pypi/v/mcp-forge?style=for-the-badge&logo=pypi&logoColor=white&color=2563eb)](https://pypi.org/project/mcp-forge/)
+[![Python Version](https://img.shields.io/pypi/pyversions/mcp-forge?style=for-the-badge&logo=python&logoColor=white&color=2563eb)](https://pypi.org/project/mcp-forge/)
+[![Downloads](https://img.shields.io/pepy/dt/mcp-forge?style=for-the-badge&logo=python&logoColor=white&color=2563eb)](https://pepy.tech/project/mcp-forge)
+[![License](https://img.shields.io/github/license/KennyVaneetvelde/mcp-forge?style=for-the-badge&logo=opensourceinitiative&logoColor=white&color=2563eb)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/J3W9b5AZJR)
 
-[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](http://paypal.com/paypalme/KennyVaneetvelde)
+**Generate production-ready MCP servers in seconds**
+<br>
+_Fast • Modern • Feature-Complete_
 
-Your support helps maintain and improve the project!
+[Quick Start](#-quick-start) • [Features](#-features) • [Documentation](#-documentation) • [Examples](#-examples) • [Community](#-community)
+
+---
+
+</div>
+
+## 🎯 What is MCP Forge?
+
+**MCP Forge** is a powerful scaffolding CLI that generates fully-featured Model Context Protocol (MCP) servers with best practices built-in. Stop writing boilerplate and start building amazing AI integrations!
+
+```bash
+# Install
+pip install mcp-forge
+
+# Create a server
+mcp-forge new my-awesome-server
+
+# That's it! 🎉
+```
+
+Your server is ready with **tools**, **resources**, **prompts**, **authentication**, **elicitation**, **sampling**, and more!
 
 ## ✨ Features
 
-- 🚀 **Multiple Transports**: stdio (recommended), HTTP, and SSE with SSL/TLS support
-- 🔐 **SSL/TLS Security**: Full SSL support for SSE transport including mTLS
-- 🛠️ **Tools**: 5 ready-to-use example tools with full type validation
-- 📦 **Resources**: Static and dynamic resource examples with URI patterns
-- 💬 **Prompts**: Template structure for prompt implementations
-- 🏗️ **Clean Architecture**: Service-based design with clear interfaces
-- 📝 **FastMCP**: Built on the FastMCP Python framework
-- 🔄 **Development Mode**: Auto-reload support for faster iteration
-- ⚡ **uv Integration**: Fast dependency management and project setup
-- 🧪 **Demo Clients**: Comprehensive testing tools included
+<div align="center">
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Installation
+### 🚀 Core Features
+- **Multiple Transports**
+  <br>Support for `stdio`, `HTTP`, and `SSE` (Server-Sent Events) out of the box.
+- **FastMCP 2.0**
+  <br>Built on the official, high-performance Python MCP framework.
+- **Clean Architecture**
+  <br>Service layer, interfaces, and dependency injection for scalable code.
+- **Type Safety**
+  <br>Full Pydantic validation and type hinting throughout the codebase.
 
-Recommended: Use `uvx` for temporary environments:
+</td>
+<td width="50%" valign="top">
+
+### 🔥 Advanced Capabilities
+- **OAuth 2.1 Authentication**
+  <br>Secure your server with full OAuth 2.1 support (optional).
+- **Smart Features**
+  <br>Includes **Elicitation** (interactive inputs), **Sampling** (AI collaboration), and **Roots**.
+- **Developer Experience**
+  <br>Comes with a **Demo Client**, **MCP Inspector** support, and comprehensive docs.
+- **Production Ready**
+  <br>RFC 5424 logging, error handling, and best practices built-in.
+
+</td>
+</tr>
+</table>
+</div>
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
-# Run directly with uvx
-uvx mcp-forge --help
-```
-
-Or install globally:
-
-```bash
+# Using pip
 pip install mcp-forge
-mcp-forge --help
+
+# Using uv (recommended for generated projects)
+uv tool install mcp-forge
 ```
 
-## Quick Start
-
-### Create a New MCP Server
+### Create Your First Server
 
 ```bash
-# Basic usage
-uvx mcp-forge new my-server
+# Interactive mode (recommended)
+mcp-forge new my-server
 
 # With options
-uvx mcp-forge new my-server \
-  --description "My amazing MCP server" \
+mcp-forge new my-server \
+  --description "My awesome MCP server" \
   --with-prompts \
-  --with-sampling
+  --with-sampling \
+  --with-elicitation
 ```
 
-### Command Options
-
-- `--description` / `-d`: Project description
-- `--python-version` / `-p`: Python version requirement (default: `>=3.10`)
-- `--with-prompts` / `--no-prompts`: Include prompt examples (default: enabled)
-- `--with-sampling` / `--no-sampling`: Enable sampling support (default: enabled)
-
-### Examples
-
-```bash
-# Basic server
-uvx mcp-forge new my-server
-
-# Server with description
-uvx mcp-forge new my-server --description "My awesome MCP server"
-
-# Minimal server without extras
-uvx mcp-forge new simple-server --no-prompts --no-sampling
-
-# Full-featured server with everything
-uvx mcp-forge new full-server --with-prompts --with-sampling
-```
-
-## Generated Project Structure
-
-```
-my-server/
-├── my_server/
-│   ├── __init__.py
-│   ├── server.py                # Unified entry point
-│   ├── server_stdio.py          # stdio transport
-│   ├── server_http.py           # HTTP transport
-│   ├── server_sse.py            # SSE transport with SSL support
-│   ├── interfaces/
-│   │   ├── tool.py
-│   │   ├── resource.py
-│   │   └── prompt.py            # Prompt interface (NEW)
-│   ├── services/
-│   │   ├── tool_service.py
-│   │   ├── resource_service.py
-│   │   └── prompt_service.py    # Prompt management (NEW)
-│   ├── tools/
-│   │   ├── add_numbers.py
-│   │   ├── date_difference.py
-│   │   ├── reverse_string.py
-│   │   ├── current_time.py
-│   │   └── random_number.py
-│   ├── resources/
-│   │   ├── hello_world.py
-│   │   └── user_profile.py
-│   └── prompts/                 # Prompt templates (NEW)
-│       ├── code_review.py
-│       ├── data_analysis.py
-│       └── debug_assistant.py
-├── pyproject.toml
-└── README.md
-```
-
-## Transport Options
-
-MCP-Forge supports multiple transport mechanisms, each suited for different use cases:
-
-### stdio Transport
-- **Best for**: Claude Desktop, Cursor, local development
-- **Protocol**: Standard input/output communication
-- **Security**: Inherits from parent process
-- **Usage**: `--transport stdio`
-
-### HTTP Transport  
-- **Best for**: Web deployments, REST API integration
-- **Protocol**: HTTP with request/response pattern
-- **Security**: HTTPS via reverse proxy recommended
-- **Usage**: `--transport http`
-
-### SSE Transport
-- **Best for**: Real-time streaming, secure communications
-- **Protocol**: Server-Sent Events over HTTP/HTTPS
-- **Security**: Built-in SSL/TLS and mTLS support
-- **Usage**: `--transport sse`
-
-
-## Using Your Generated Server
-
-### 1. Setup
+### Run It!
 
 ```bash
 cd my-server
-uv venv
-uv pip install -e .
+
+# Install dependencies
+uv sync
+
+# Test with interactive demo client
+python demo.py
+
+# Run automated tests
+python demo.py --mode test
+
+# Start server for Claude Desktop
+python -m my_server.server --transport stdio
+
+# Start HTTP server
+python -m my_server.server --transport http --port 8000
 ```
 
-### 2. Run the Server
+### Use with Claude Desktop
 
-```bash
-# Unified entry point (recommended)
-python -m my_server.server --transport stdio  # For Claude Desktop, Cursor
-python -m my_server.server --transport http   # For web deployments
-python -m my_server.server --transport sse    # For SSE with optional SSL
+Add to `claude_desktop_config.json`:
 
-# With options
-python -m my_server.server --transport http --port 8080 --reload
-
-# SSE with SSL/TLS
-python -m my_server.server_sse --ssl-keyfile server.key --ssl-certfile server.crt
-
-# SSE with mTLS (mutual TLS)
-python -m my_server.server_sse \
-  --ssl-keyfile server.key \
-  --ssl-certfile server.crt \
-  --ssl-ca-certs ca.crt \
-  --require-client-cert
-```
-
-### 3. Test Your Server
-
-Use the included demo client to test all features:
-
-```bash
-# Test with stdio transport
-python demo_client.py --transport stdio
-
-# Test with HTTP transport (start server first)
-python demo_client.py --transport http --url http://localhost:8000
-
-# Interactive testing mode
-python demo_client.py --transport http --interactive
-```
-
-### 4. Configure with Claude Desktop
-
-Add to Claude Desktop config:
 ```json
 {
   "mcpServers": {
     "my-server": {
-      "command": "python",
-      "args": ["-m", "my_server.server", "--transport", "stdio"]
+      "command": "uv",
+      "args": ["--directory", "/path/to/my-server", "run", "my_server.server"]
     }
   }
 }
 ```
 
-## SSE Transport with SSL/TLS Support
+Restart Claude Desktop and your tools are ready! 🎉
 
-The SSE (Server-Sent Events) transport provides real-time server-to-client streaming with comprehensive SSL/TLS security features.
+## 📖 What Gets Generated?
 
-### SSL/TLS Features
-
-- **Modern TLS Support**: TLS 1.2 and 1.3 with configurable cipher suites
-- **Certificate Management**: Support for SSL certificates, private keys, and CA bundles
-- **mTLS Support**: Client certificate verification for mutual TLS authentication
-- **Environment Variables**: Configure SSL via environment for production deployments
-- **Development Mode**: Instructions and tools for self-signed certificates
-
-### Configuration Options
-
-```bash
-# Basic SSE server (no SSL)
-python -m my_server.server_sse
-
-# With SSL/TLS encryption
-python -m my_server.server_sse \
-  --ssl-keyfile /path/to/server.key \
-  --ssl-certfile /path/to/server.crt
-
-# With specific TLS version
-python -m my_server.server_sse \
-  --ssl-keyfile server.key \
-  --ssl-certfile server.crt \
-  --tls-version 1.3
-
-# With client certificate verification (mTLS)
-python -m my_server.server_sse \
-  --ssl-keyfile server.key \
-  --ssl-certfile server.crt \
-  --ssl-ca-certs ca.crt \
-  --require-client-cert
-
-# Using environment variables
-SSL_KEYFILE=/etc/ssl/server.key \
-SSL_CERTFILE=/etc/ssl/server.crt \
-python -m my_server.server_sse
+```
+my-server/
+├── my_server/
+│   ├── server.py                      # Main entry point (all transports)
+│   ├── server_stdio.py                # stdio-only server
+│   ├── server_http.py                 # HTTP server with auth
+│   ├── server_sse.py                  # SSE server with SSL/TLS
+│   ├── interfaces/                    # Abstract base classes
+│   │   ├── tool.py
+│   │   ├── resource.py
+│   │   └── prompt.py
+│   ├── services/                      # Business logic layer
+│   │   ├── tool_service.py
+│   │   ├── resource_service.py
+│   │   ├── prompt_service.py
+│   │   ├── auth_service.py           # OAuth 2.1 (optional)
+│   │   ├── root_service.py           # Roots (optional)
+│   │   └── completion_service.py     # Completions (optional)
+│   ├── tools/                         # Tool implementations
+│   │   ├── add_numbers.py            # Basic arithmetic
+│   │   ├── weather_tool.py           # Structured outputs
+│   │   ├── reasoning_tool.py         # Sampling (optional)
+│   │   ├── greeting_elicitation.py   # Elicitation (optional)
+│   │   └── ...
+│   ├── resources/                     # Resource implementations
+│   │   ├── hello_world.py
+│   │   └── user_profile.py
+│   └── prompts/                       # Prompt implementations
+│       ├── code_review.py
+│       └── ...
+├── demo.py                            # Interactive demo client
+├── completions.py                     # Completion handlers (optional)
+├── roots_config.py                    # Roots config (optional)
+├── auth_config.py                     # Auth config (optional)
+├── pyproject.toml                     # uv project config
+└── README.md                          # Project documentation
 ```
 
-### Generating Self-Signed Certificates
+## 💡 Examples
 
-For development and testing:
+### Adding a Simple Tool
 
-```bash
-# Generate a self-signed certificate
-openssl req -x509 -newkey rsa:4096 -nodes \
-  -out cert.pem -keyout key.pem -days 365 \
-  -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+```python
+# my_server/tools/calculator.py
+from pydantic import BaseModel, Field
+from my_server.interfaces.tool import Tool, ToolResponse, ToolContent
 
-# Generate with specific domains
-openssl req -x509 -newkey rsa:4096 -nodes \
-  -out cert.pem -keyout key.pem -days 365 \
-  -subj "/CN=myserver.local" \
-  -addext "subjectAltName=DNS:myserver.local,DNS:localhost,IP:127.0.0.1"
+class CalculatorInput(BaseModel):
+    expression: str = Field(..., description="Math expression to evaluate")
+
+class CalculatorTool(Tool):
+    name = "calculator"
+    description = "Evaluates mathematical expressions"
+    input_model = CalculatorInput
+
+    async def execute(self, input_data: CalculatorInput) -> ToolResponse:
+        try:
+            result = eval(input_data.expression)
+            return ToolResponse(
+                content=[ToolContent.text(f"Result: {result}")]
+            )
+        except Exception as e:
+            return ToolResponse(
+                content=[ToolContent.text(f"Error: {e}")],
+                is_error=True
+            )
 ```
 
-### Production Deployment
+Register in `tools/__init__.py` and `server.py` - that's it!
 
-For production environments:
+### Tool with AI Collaboration
 
-1. **Use trusted certificates** from a Certificate Authority (Let's Encrypt, etc.)
-2. **Enable strict TLS** with `--tls-version 1.3`
-3. **Configure strong ciphers** (enabled by default)
-4. **Use reverse proxy** (Nginx, Cloudflare) for SSL termination
-5. **Enable mTLS** for enhanced security when appropriate
+```python
+from fastmcp import Context
 
-### Security Best Practices
+class ResearchTool(Tool):
+    name = "research"
+    description = "AI-powered research assistant"
+    input_model = ResearchInput
 
-- Always use HTTPS/TLS in production
-- Keep certificates and keys secure (proper file permissions)
-- Rotate certificates regularly
-- Monitor certificate expiration
-- Use strong cipher suites (configured by default)
-- Consider using a reverse proxy for additional security layers
+    async def execute(self, input_data: ResearchInput, ctx: Context) -> ToolResponse:
+        # Call another AI for help
+        response = await ctx.sample(
+            messages=[{"role": "user", "content": input_data.query}],
+            system_prompt="You are a research expert.",
+            temperature=0.7
+        )
 
-## What's New in v0.3.0
+        # Report progress
+        await ctx.report_progress(1.0, "Research complete")
 
-### Breaking Changes
-- ❌ **Standalone SSE module removed** - Unified transport system
-- 📝 **Unified server entry** - New `server.py` with `--transport` flag
-- 🔄 **FastMCP import changes** - Now uses `from fastmcp import FastMCP`
-
-### New Features
-- ✅ **SSE transport** - Server-Sent Events with full SSL/TLS support
-- 🔐 **SSL/mTLS support** - Comprehensive security features for SSE
-- ✅ **HTTP transport** - Web-ready communication
-- 💬 **Prompts support** - Reusable message templates
-- 🤖 **Sampling capability** - AI-to-AI collaboration
-- 🎯 **Transport selection** - Choose stdio, HTTP, SSE, or all
-- 📦 **FastMCP 2.0** - Latest framework integration
-
-### Migration from v0.2.x
-
-If you have existing servers:
-1. Use the new unified server entry point
-2. Update imports to use `fastmcp` instead of `mcp.server.fastmcp`
-3. Choose transport via `--transport` flag
-4. Note: HTTP transport currently uses SSE under the hood
-
-## Testing MCP Servers
-
-MCP-Forge includes a universal demo client (`demo_mcp_client.py`) that can test any MCP server:
-
-### Features
-- Test stdio, HTTP, and SSE transports
-- Automatic discovery of tools, resources, and prompts
-- Interactive and automated testing modes
-- Comprehensive test suite with examples
-- Beautiful terminal UI with rich formatting
-
-### Usage
-
-```bash
-# Test any stdio server
-python demo_mcp_client.py --transport stdio --module my_server
-
-# Test any HTTP server (SSE endpoint)
-python demo_mcp_client.py --transport http --url http://localhost:8000
-
-# Interactive mode
-python demo_mcp_client.py --transport http --interactive --url http://localhost:8000
-
-# Run full test suite
-python demo_mcp_client.py --transport stdio --module my_server --test-all
+        return ToolResponse(content=[ToolContent.text(response.content)])
 ```
 
-### What It Tests
-- **Tools**: Executes each tool with sample arguments
-- **Resources**: Reads static and dynamic resources
-- **Prompts**: Generates prompts with example inputs
-- **Capabilities**: Displays server capabilities and features
-- **Performance**: Measures response times
+### Interactive User Input (Elicitation)
 
-## About MCP
+```python
+class TaskTool(Tool):
+    name = "create_task"
+    description = "Creates a task with user confirmation"
+    input_model = TaskInput
 
-The Model Context Protocol (MCP) is an open standard that enables seamless communication between LLMs and external tools/services. It provides a unified way to expose capabilities like tools, resources, and prompts.
+    async def execute(self, input_data: TaskInput, ctx: Context) -> ToolResponse:
+        # Ask user for confirmation
+        result = await ctx.elicit(
+            "Create this task?",
+            response_type=None  # Approval only
+        )
 
-Learn more:
-- [MCP Specification](https://modelcontextprotocol.io/)
-- [FastMCP Documentation](https://gofastmcp.com)
-- [Anthropic's MCP Announcement](https://www.anthropic.com/news/model-context-protocol)
+        if result.action == "accept":
+            # Create the task
+            return ToolResponse(content=[ToolContent.text("Task created!")])
+        else:
+            return ToolResponse(content=[ToolContent.text("Cancelled")])
+```
 
-## Contributing
+### Structured Output
 
-Contributions are welcome! This project follows modern MCP standards and best practices.
+```python
+class WeatherData(BaseModel):
+    temperature: float
+    humidity: int
+    condition: str
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Follow the existing code style and patterns
-4. Add tests if applicable
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+class WeatherTool(Tool):
+    name = "get_weather"
+    input_model = WeatherInput
+    output_model = WeatherData  # Enables structured output!
+
+    async def execute(self, input_data: WeatherInput) -> ToolResponse:
+        weather = WeatherData(
+            temperature=72.5,
+            humidity=65,
+            condition="Sunny"
+        )
+        return ToolResponse.from_model(weather)
+```
+
+## 🎓 Documentation
+
+- 📘 **[Getting Started Guide](docs/GETTING_STARTED.md)** - Complete walkthrough for new users
+- 📙 **[Quick Reference](docs/QUICK_REFERENCE.md)** - One-page cheat sheet for common tasks
+
+### External Resources
+
+- 🌐 [MCP Specification](https://spec.modelcontextprotocol.io/) - Official MCP protocol docs
+- 🚀 [FastMCP Documentation](https://gofastmcp.com) - FastMCP framework docs
+- 🔍 [MCP Inspector](https://github.com/modelcontextprotocol/inspector) - Official GUI testing tool
+- 🐍 [Pydantic](https://docs.pydantic.dev/) - Data validation library
+
+## 🎨 Project Templates
+
+MCP Forge supports different template configurations:
+
+| Feature | Description | Flag |
+|---------|-------------|------|
+| **Prompts** | Reusable LLM templates | `--with-prompts` / `--no-prompts` |
+| **Sampling** | AI-to-AI collaboration | `--with-sampling` / `--no-sampling` |
+| **Elicitation** | Interactive user input | `--with-elicitation` / `--no-elicitation` |
+| **Roots** | Filesystem boundaries | `--with-roots` / `--no-roots` |
+| **Completion** | Argument autocomplete | `--with-completion` / `--no-completion` |
+| **Authentication** | OAuth 2.1 system | `--with-auth` / `--no-auth` |
+
+### Example Configurations
+
+```bash
+# Minimal server (just tools and resources)
+mcp-forge new minimal-server --no-prompts --no-sampling --no-elicitation
+
+# Full-featured server (everything enabled)
+mcp-forge new full-server \
+  --with-prompts \
+  --with-sampling \
+  --with-elicitation \
+  --with-auth
+
+# API integration server (auth + completion)
+mcp-forge new api-server --with-auth --with-completion
+```
+
+## 🧪 Testing Your Server
+
+Generated servers include multiple testing options:
+
+### 1. Interactive Demo Client
+
+```bash
+python demo.py
+```
+
+Features:
+- Menu-driven interface
+- Browse and execute all tools
+- Read resources
+- Generate prompts
+- Automated test suite
+
+### 2. MCP Inspector (Official GUI)
+
+```bash
+npx @modelcontextprotocol/inspector uv run -m my_server.server
+```
+
+Browser-based GUI for:
+- Visual tool execution
+- Schema inspection
+- Resource browsing
+- Config export
+
+### 3. Manual Testing
+
+```bash
+# Start server
+python -m my_server.server --transport http --port 8000
+
+# Test with curl
+curl -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "tools/list", "id": 1}'
+```
+
+## 🚀 Deployment
+
+### Docker
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY . .
+RUN pip install uv && uv sync
+EXPOSE 8000
+CMD ["uv", "run", "python", "-m", "my_server.server", "--transport", "sse", "--port", "8000"]
+```
+
+### Systemd
+
+```ini
+[Unit]
+Description=My MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=mcp
+WorkingDirectory=/opt/my-server
+ExecStart=/usr/local/bin/uv run python -m my_server.server --transport sse --port 8443
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Cloud Platforms
+
+- **Railway**: One-click deploy from GitHub
+- **Fly.io**: `fly launch` and deploy
+- **DigitalOcean**: Docker container on App Platform
+- **AWS/GCP/Azure**: Container services or serverless
+
+## 🌟 Showcase
+
+Built something cool with MCP Forge? We'd love to see it!
+
+Share your projects:
+- 💬 [Discord Community](https://discord.gg/J3W9b5AZJR)
+- 🐙 [GitHub Discussions](https://github.com/KennyVaneetvelde/mcp-forge/discussions)
+- 🐦 Twitter with `#MCPForge`
+
+## 🤝 Community & Support
+
+<div align="center">
+
+### 💬 Join Our Community
+
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-7289da?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/J3W9b5AZJR)
+
+Get help, share projects, and connect with other MCP developers!
+
+### ❤️ Support Development
+
+If MCP Forge saved you time and effort, consider supporting its development:
+
+[![PayPal](https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](http://paypal.me/KennyVaneetvelde)
+
+Your support helps maintain and improve MCP Forge for everyone! 🙏
+
+</div>
+
+## 🛠️ Contributing
+
+We love contributions! Here's how you can help:
+
+### Ways to Contribute
+
+- 🐛 **Report Bugs**: Open an issue with detailed reproduction steps
+- 💡 **Suggest Features**: Share your ideas in GitHub Discussions
+- 📝 **Improve Docs**: Fix typos, add examples, clarify explanations
+- 🔧 **Submit PRs**: Add features, fix bugs, improve templates
+- ⭐ **Star the Repo**: Show your support and help others discover MCP Forge
 
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/mcp-forge
+# Clone the repository
+git clone https://github.com/KennyVaneetvelde/mcp-forge.git
 cd mcp-forge
-uv venv
-uv pip install -e .
+
+# Install dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Lint code
+ruff check .
+
+# Format code
+ruff format .
 ```
 
-## Roadmap
+### Contribution Guidelines
 
-- [ ] Add more transport options (WebSocket, gRPC)
-- [ ] Template customization system
-- [ ] Plugin architecture for extensions
-- [ ] Testing utilities and examples
-- [ ] CLI tool for adding components to existing projects
-- [ ] Integration with popular frameworks
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
 
-## License
+Please ensure:
+- ✅ Code follows project style (ruff)
+- ✅ Tests pass
+- ✅ Documentation is updated
+- ✅ Commit messages are clear
 
-MIT License - see LICENSE file for details.
+## 📜 License
 
-## Acknowledgments
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-- Anthropic for creating the Model Context Protocol
-- FastMCP team for the excellent Python framework
-- The MCP community for feedback and contributions
+## 🙏 Acknowledgments
+
+- **[Anthropic](https://www.anthropic.com/)** - For creating the Model Context Protocol
+- **[FastMCP](https://gofastmcp.com)** - For the excellent Python MCP framework
+- **[MCP Community](https://modelcontextprotocol.io/)** - For advancing AI integration standards
+- **All Contributors** - Thank you for making MCP Forge better!
+
+## 📞 Contact
+
+- 💬 **Discord**: [Join our server](https://discord.gg/J3W9b5AZJR)
+- 🐙 **GitHub**: [Issues](https://github.com/KennyVaneetvelde/mcp-forge/issues) • [Discussions](https://github.com/KennyVaneetvelde/mcp-forge/discussions)
+- 📧 **Email**: support@example.com (if applicable)
+- 🐦 **Twitter**: [@MCPForge](https://twitter.com/mcpforge) (if applicable)
 
 ---
 
-Built with ❤️ for the MCP ecosystem
+<div align="center">
+
+**Made with ❤️ by the MCP Forge Team**
+
+⭐ **Star us on GitHub** • 💬 **Join Discord** • ❤️ **Support on PayPal**
+
+[⬆ Back to Top](#-mcp-forge)
+
+</div>
+
+## 📈 Star History
+
+<div align="center">
+<a href="https://star-history.com/#KennyVaneetvelde/mcp-forge&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=KennyVaneetvelde/mcp-forge&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=KennyVaneetvelde/mcp-forge&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=KennyVaneetvelde/mcp-forge&type=Date" />
+ </picture>
+</a>
+</div>

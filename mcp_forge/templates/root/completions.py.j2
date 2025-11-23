@@ -1,0 +1,98 @@
+"""Example completion handlers for prompts."""
+from typing import List, Dict, Any
+
+
+async def complete_language_argument(value: str, context: Dict[str, Any]) -> List[str]:
+    """Provide completion suggestions for the 'language' argument.
+    
+    Args:
+        value: Current partial value being typed
+        context: Other resolved argument values for context-aware completion
+        
+    Returns:
+        List of completion suggestions
+    """
+    languages = [
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "go",
+        "rust",
+        "c++",
+        "c#",
+        "ruby",
+        "php",
+        "swift",
+        "kotlin",
+        "scala",
+        "r",
+        "matlab",
+        "julia",
+    ]
+    
+    # Filter based on current value
+    if not value:
+        return languages
+    
+    value_lower = value.lower()
+    return [lang for lang in languages if lang.startswith(value_lower)]
+
+
+async def complete_framework_argument(value: str, context: Dict[str, Any]) -> List[str]:
+    """Provide completion suggestions for the 'framework' argument.
+    
+    This is context-aware: it returns different frameworks based on the language.
+    
+    Args:
+        value: Current partial value being typed
+        context: Other resolved argument values (e.g., {'language': 'python'})
+        
+    Returns:
+        List of completion suggestions
+    """
+    language = context.get("language", "").lower()
+    
+    frameworks_by_language = {
+        "python": ["django", "flask", "fastapi", "pytorch", "tensorflow", "pandas", "numpy"],
+        "javascript": ["react", "vue", "angular", "express", "nextjs", "nestjs", "svelte"],
+        "typescript": ["react", "vue", "angular", "nextjs", "nestjs"],
+        "java": ["spring", "hibernate", "junit", "maven", "gradle"],
+        "go": ["gin", "echo", "fiber", "gorilla"],
+        "rust": ["actix", "rocket", "tokio", "warp"],
+    }
+    
+    frameworks = frameworks_by_language.get(language, [])
+    
+    # Filter based on current value
+    if not value:
+        return frameworks
+    
+    value_lower = value.lower()
+    return [fw for fw in frameworks if fw.startswith(value_lower)]
+
+
+async def complete_style_argument(value: str, context: Dict[str, Any]) -> List[str]:
+    """Provide completion suggestions for the 'style' argument.
+    
+    Args:
+        value: Current partial value being typed
+        context: Other resolved argument values
+        
+    Returns:
+        List of completion suggestions
+    """
+    styles = [
+        "concise",
+        "detailed",
+        "formal",
+        "casual",
+        "technical",
+        "beginner-friendly",
+    ]
+    
+    if not value:
+        return styles
+    
+    value_lower = value.lower()
+    return [style for style in styles if style.startswith(value_lower)]

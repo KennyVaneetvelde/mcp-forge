@@ -1,0 +1,128 @@
+"""Service layer for managing completions."""
+from typing import Dict, List, Callable, Optional, Any
+from fastmcp import FastMCP
+from pydantic import BaseModel, Field
+
+
+class CompletionHandler:
+    """Handler for generating completions for a specific reference."""
+    
+    def __init__(
+        self, 
+        ref_type: str,
+        ref_name: str, 
+        handler: Callable[[str, str, Optional[Dict[str, Any]]], List[str]]
+    ):
+        """Initialize completion handler.
+        
+        Args:
+            ref_type: Type of reference (ref/prompt or ref/resource)
+            ref_name: Name or URI of the reference
+            handler: Async callable that generates completions
+        """
+        self.ref_type = ref_type
+        self.ref_name = ref_name
+        self.handler = handler
+
+
+class CompletionService:
+    """Service for managing argument completions for prompts and resources.
+    
+    Completions allow clients to provide autocomplete suggestions for prompt
+    arguments and resource template parameters, improving UX.
+    """
+
+    def __init__(self):
+        self._handlers: Dict[str, CompletionHandler] = {}
+
+    def register_completion(
+        self,
+        ref_type: str,
+        ref_name: str,
+        argument_name: str,
+        handler: Callable[[str, Optional[Dict[str, Any]]], List[str]]
+    ) -> None:
+        """Register a completion handler for a specific argument.
+        
+        Args:
+            ref_type: "ref/prompt" or "ref/resource"
+            ref_name: Name of the prompt or URI pattern of the resource
+            argument_name: Name of the argument to complete
+            handler: Async function that returns completion values
+        """
+        key = f"{ref_type}:{ref_name}:{argument_name}"
+        self._handlers[key] = CompletionHandler(ref_type, ref_name, handler)
+
+    async def get_completions(
+        self,
+        ref_type: str,
+        ref_name: str,
+        argument_name: str,
+        current_value: str,
+        context_args: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """Get completions for a specific argument.
+        
+        Args:
+            ref_type: "ref/prompt" or "ref/resource"
+            ref_name: Name of the prompt or URI of the resource
+            argument_name: Name of the argument being completed
+            current_value: Current partial value to complete
+            context_args: Other resolved argument values for context
+            
+        Returns:
+            List of completion suggestions (max 100)
+        """
+        key = f"{ref_type}:{ref_name}:{argument_name}"
+        
+        if key not in self._handlers:
+            # No handler registered, return empty list
+            return []
+        
+        handler = self._handlers[key]
+        results = await handler.handler(current_value, context_args or {})
+        
+        # Limit to 100 items as per MCP spec
+        return results[:100]
+
+    def register_mcp_handlers(self, mcp: FastMCP) -> None:
+        """Register completion capability with FastMCP.
+        
+        This enables the completion/complete endpoint for providing
+        autocomplete suggestions to clients.
+        """
+        @mcp.completion()
+        async def complete_handler(
+            ref: Dict[str, str],
+            argument: Dict[str, str],
+            context: Optional[Dict[str, Any]] = None
+        ):
+            """Handle completion/complete requests from MCP clients.
+            
+            Args:
+                ref: Reference object with 'type' and 'name' or 'uri'
+                argument: Argument object with 'name' and current 'value'
+                context: Optional context with 'arguments' dict
+                
+            Returns:
+                Completion result with values, total, and hasMore fields
+            """
+            ref_type = ref.get("type", "")
+            ref_name = ref.get("name") or ref.get("uri", "")
+            arg_name = argument.get("name", "")
+            arg_value = argument.get("value", "")
+            context_args = context.get("arguments", {}) if context else {}
+            
+            completions = await self.get_completions(
+                ref_type=ref_type,
+                ref_name=ref_name,
+                argument_name=arg_name,
+                current_value=arg_value,
+                context_args=context_args
+            )
+            
+            return {
+                "values": completions,
+                "total": len(completions),
+                "hasMore": False  # We return all matches in one batch
+            }

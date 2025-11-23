@@ -1,0 +1,28 @@
+"""Example roots configuration."""
+from pathlib import Path
+from {{ config.package_name }}.services.root_service import RootDefinition
+
+
+def get_default_roots():
+    """Get default root definitions for this server.
+    
+    Roots define the filesystem boundaries where this MCP server operates.
+    Clients use this information to understand the server's scope.
+    
+    Returns:
+        List of RootDefinition objects
+    """
+    # Get current working directory as the primary root
+    current_dir = Path.cwd()
+    
+    return [
+        RootDefinition(
+            uri=f"file://{current_dir.as_posix()}",
+            name="{{ config.project_name }} Workspace"
+        ),
+        # Add more roots as needed for your use case:
+        # RootDefinition(
+        #     uri="file:///path/to/data",
+        #     name="Data Directory"
+        # ),
+    ]

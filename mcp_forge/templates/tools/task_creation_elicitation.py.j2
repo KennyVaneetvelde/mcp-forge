@@ -1,0 +1,63 @@
+"""Example tool demonstrating structured data elicitation."""
+from {{ config.package_name }}.interfaces.tool import Tool, BaseToolInput, ToolResponse
+from fastmcp import Context
+from dataclasses import dataclass
+from typing import Literal
+from pydantic import BaseModel, Field
+
+
+class TaskCreationElicitationInput(BaseToolInput):
+    """Input model for task creation with elicitation."""
+    pass  # No input needed - we'll elicit task details from the user
+
+
+class TaskDetails(BaseModel):
+    """Structured response model for task details.
+
+    Note: MCP specification supports only shallow objects with
+    scalar or enum properties (no nested objects or arrays).
+    """
+    title: str = Field(..., description="Task title")
+    description: str = Field(..., description="Task description")
+    priority: Literal["low", "medium", "high"] = Field(..., description="Task priority level")
+    due_date: str = Field(..., description="Due date in YYYY-MM-DD format")
+
+
+class TaskCreationElicitationTool(Tool):
+    """Tool that demonstrates structured data elicitation.
+
+    This tool requests multiple pieces of information in a single
+    elicitation request using a structured data model. It shows how to:
+    - Request structured data using Pydantic models
+    - Define enum fields using Literal types
+    - Validate the collected data
+    - Handle structured responses
+    """
+    name = "task_creation_elicitation"
+    description = "Create a task by collecting details through structured elicitation"
+    input_model = TaskCreationElicitationInput
+
+    async def execute(self, input_data: BaseToolInput, ctx: Context) -> ToolResponse:
+        """Execute task creation with structured elicitation."""
+        # Request task details using structured elicitation
+        result = await ctx.elicit(
+            "Please provide the task details:",
+            response_type=TaskDetails
+        )
+
+        # Handle the user's response
+        if result.action == "accept":
+            task = result.data
+            response_text = f"""✅ Task created successfully!
+
+Title: {task.title}
+Description: {task.description}
+Priority: {task.priority.upper()}
+Due Date: {task.due_date}
+
+Your task has been added to the system."""
+            return ToolResponse.from_text(response_text)
+        elif result.action == "decline":
+            return ToolResponse.from_text("Task creation declined. No task was created.")
+        else:  # cancelled
+            return ToolResponse.from_text("Task creation cancelled.")

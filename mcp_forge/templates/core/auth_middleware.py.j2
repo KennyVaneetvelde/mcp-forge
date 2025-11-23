@@ -1,0 +1,141 @@
+"""Authentication middleware for HTTP/SSE transports (MCP OAuth 2.1 spec)."""
+from typing import Optional, List, Callable
+from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
+from {{ config.package_name }}.services.auth_service import AuthService
+
+
+class AuthMiddleware:
+    """Middleware to handle OAuth 2.1 authorization for MCP servers.
+    
+    This middleware:
+    1. Checks the Authorization header on incoming requests
+    2. Validates the bearer token
+    3. Verifies required scopes
+    4. Returns proper WWW-Authenticate headers on auth failures (401/403)
+    
+    Implements MCP authorization spec based on OAuth 2.1 and RFC 6750.
+    """
+    
+    def __init__(
+        self,
+        auth_service: AuthService,
+        exempt_paths: Optional[List[str]] = None,
+        realm: Optional[str] = None
+    ):
+        """Initialize the auth middleware.
+        
+        Args:
+            auth_service: The AuthService instance to use for validation
+            exempt_paths: List of paths that don't require authentication
+            realm: The authentication realm for WWW-Authenticate headers
+        """
+        self.auth_service = auth_service
+        self.exempt_paths = exempt_paths or [
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/openid-configuration",
+            "/.well-known/oauth-protected-resource",
+            "/health",  # Common health check endpoint
+        ]
+        self.realm = realm or "mcp-server"
+    
+    def is_exempt(self, path: str) -> bool:
+        """Check if a path is exempt from authentication."""
+        return any(path.startswith(exempt) for exempt in self.exempt_paths)
+    
+    async def __call__(self, request: Request, call_next: Callable):
+        """Process the request through auth middleware.
+        
+        Args:
+            request: The incoming request
+            call_next: The next middleware/handler in the chain
+            
+        Returns:
+            The response
+        """
+        # Skip auth for exempt paths
+        if self.is_exempt(request.url.path):
+            return await call_next(request)
+        
+        # Get Authorization header
+        auth_header = request.headers.get("Authorization")
+        
+        # Check authorization (no specific scopes required by default)
+        # Individual endpoints can check specific scopes using request.state.access_token
+        is_authorized, error_msg, access_token = await self.auth_service.check_authorization(
+            auth_header=auth_header
+        )
+        
+        if not is_authorized:
+            # Determine error type
+            if not auth_header or "invalid" in error_msg.lower() or "expired" in error_msg.lower():
+                error_code = "invalid_token"
+                status_code = status.HTTP_401_UNAUTHORIZED
+            else:
+                error_code = "insufficient_scope"
+                status_code = status.HTTP_403_FORBIDDEN
+            
+            # Create WWW-Authenticate header
+            www_authenticate = self.auth_service.create_www_authenticate_header(
+                error=error_code,
+                error_description=error_msg,
+                realm=self.realm
+            )
+            
+            # Return error response with proper header
+            return JSONResponse(
+                status_code=status_code,
+                content={"error": error_code, "error_description": error_msg},
+                headers={"WWW-Authenticate": www_authenticate}
+            )
+        
+        # Store access token in request state for later use
+        request.state.access_token = access_token
+        
+        # Continue processing
+        return await call_next(request)
+
+
+def require_scopes(*required_scopes: str):
+    """Decorator to require specific scopes for an endpoint.
+    
+    Usage:
+        @app.get("/protected-resource")
+        @require_scopes("resources:read", "resources:write")
+        async def get_resource(request: Request):
+            # Access token is available at request.state.access_token
+            pass
+    
+    Args:
+        *required_scopes: The scopes required to access this endpoint
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(func: Callable):
+        async def wrapper(request: Request, *args, **kwargs):
+            # Access token should be set by AuthMiddleware
+            access_token = getattr(request.state, "access_token", None)
+            
+            if not access_token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="No valid access token found",
+                    headers={"WWW-Authenticate": "Bearer"}
+                )
+            
+            # Check scopes
+            if not access_token.has_all_scopes(list(required_scopes)):
+                missing = [s for s in required_scopes if s not in access_token.scopes]
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Insufficient scope. Missing: {', '.join(missing)}",
+                    headers={
+                        "WWW-Authenticate": f'Bearer error="insufficient_scope", scope="{" ".join(required_scopes)}"'
+                    }
+                )
+            
+            return await func(request, *args, **kwargs)
+        
+        return wrapper
+    return decorator

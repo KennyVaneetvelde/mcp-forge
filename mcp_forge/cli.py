@@ -19,16 +19,21 @@ def main():
 @main.command()
 @click.argument("project_name")
 @click.option("--description", "-d", help="Project description")
-@click.option("--python-version", "-p", default=">=3.10", help="Python version requirement")
+@click.option("--python-version", "-p", default=">=3.12", help="Python version requirement")
 @click.option("--with-prompts/--no-prompts", default=True, help="Include prompt examples")
 @click.option("--with-sampling/--no-sampling", default=True, help="Enable sampling support for AI-to-AI collaboration")
-def new(project_name: str, description: str, python_version: str, with_prompts: bool, with_sampling: bool):
+@click.option("--with-elicitation/--no-elicitation", default=True, help="Include elicitation examples for requesting user input (MCP 2025-06-18)")
+@click.option("--with-roots/--no-roots", default=True, help="Enable roots support for filesystem boundaries")
+@click.option("--with-completion/--no-completion", default=True, help="Enable completion support for argument autocomplete")
+@click.option("--with-auth/--no-auth", default=False, help="Enable OAuth 2.1 authentication for HTTP/SSE transports (MCP spec)")
+def new(project_name: str, description: str, python_version: str, with_prompts: bool, with_sampling: bool, with_elicitation: bool, with_roots: bool, with_completion: bool, with_auth: bool):
     """Create a new MCP server project with modern features.
 
     Examples:
         mcp-forge new my-server
         mcp-forge new my-server --with-prompts
         mcp-forge new my-server --no-sampling
+        mcp-forge new my-server --with-elicitation
     """
     try:
         create_new_server(
@@ -37,6 +42,10 @@ def new(project_name: str, description: str, python_version: str, with_prompts: 
             python_version=python_version,
             with_prompts=with_prompts,
             with_sampling=with_sampling,
+            with_elicitation=with_elicitation,
+            with_roots=with_roots,
+            with_completion=with_completion,
+            with_auth=with_auth,
         )
 
         # Build success message with details
@@ -47,6 +56,14 @@ def new(project_name: str, description: str, python_version: str, with_prompts: 
             details.append("💬 Prompts: Enabled")
         if with_sampling:
             details.append("🤖 Sampling: Enabled")
+        if with_elicitation:
+            details.append("🙋 Elicitation: Enabled")
+        if with_roots:
+            details.append("📁 Roots: Enabled")
+        if with_completion:
+            details.append("✨ Completion: Enabled")
+        if with_auth:
+            details.append("🔐 Auth: OAuth 2.1 Enabled")
 
         success_msg = "\n".join(details)
         console.print(
@@ -56,13 +73,22 @@ def new(project_name: str, description: str, python_version: str, with_prompts: 
         )
 
         # Print next steps
+        package_name = project_name.replace("-", "_")
         console.print("\n[bold cyan]Next steps:[/bold cyan]")
         console.print(f"  1. cd {project_name}")
-        console.print("  2. uv venv && uv pip install -e .")
+        console.print("  2. uv sync  # Install dependencies")
         console.print("  3. Choose a transport to run:")
-        console.print("     - Stdio: python -m {} --transport stdio".format(project_name.replace("-", "_")))
-        console.print("     - HTTP:  python -m {} --transport http".format(project_name.replace("-", "_")))
-        console.print("     - SSE:   python -m {} --transport sse".format(project_name.replace("-", "_")))
+        console.print(f"     - Stdio: uv run -m {package_name}.server --transport stdio")
+        console.print(f"     - HTTP:  uv run -m {package_name}.server --transport http")
+        console.print(f"     - SSE:   uv run -m {package_name}.server --transport sse")
+        console.print("\n[bold cyan]Testing your server:[/bold cyan]")
+        console.print("  • Interactive demo client:")
+        console.print("    python demo.py  # Interactive menu to explore all features")
+        console.print("  • Automated testing:")
+        console.print("    python demo.py --mode test  # Run comprehensive test suite")
+        console.print("  • MCP Inspector (official GUI testing tool by Anthropic):")
+        console.print(f"    npx @modelcontextprotocol/inspector -- uv run -m {package_name}.server --transport stdio")
+        console.print("    Opens a browser-based GUI for testing tools, resources, and prompts")
 
     except Exception as e:
         console.print(Panel(Text(str(e), style="red"), title="[bold red]Error[/bold red]"))

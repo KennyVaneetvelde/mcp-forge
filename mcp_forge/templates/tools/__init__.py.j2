@@ -1,18 +1,34 @@
 """Tool exports."""
-# from .hello_world import HelloWorldTool # Removed
 from .add_numbers import AddNumbersTool
 from .date_difference import DateDifferenceTool
 from .reverse_string import ReverseStringTool
 from .current_time import CurrentTimeTool
 from .random_number import RandomNumberTool
-# Import additional tools you create here
+from .weather_tool import WeatherTool
+{% if config.with_sampling %}
+from .reasoning_tool import ReasoningTool
+{% endif %}
+{% if config.with_elicitation %}
+from .greeting_elicitation import GreetingElicitationTool
+from .task_creation_elicitation import TaskCreationElicitationTool
+from .meeting_planner_elicitation import MeetingPlannerElicitationTool
+from .approval_elicitation import ApprovalElicitationTool
+{% endif %}
 
 __all__ = [
-    # "HelloWorldTool", # Removed
     "AddNumbersTool",
     "DateDifferenceTool",
     "ReverseStringTool",
     "CurrentTimeTool",
     "RandomNumberTool",
+    "WeatherTool",
+{% if config.with_sampling %}
+    "ReasoningTool",
+{% endif %}
+{% if config.with_elicitation %}
+    "GreetingElicitationTool",
+    "TaskCreationElicitationTool",
+    "MeetingPlannerElicitationTool",
+    "ApprovalElicitationTool",
+{% endif %}
 ]
-# Add additional tools to the __all__ list as you create them

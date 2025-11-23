@@ -1,8 +1,19 @@
-"""{{ config.project_name }} MCP Server implementation with Streamable HTTP transport."""
+"""{{ config.project_name }} MCP Server implementation with HTTP transport.
+
+This server supports OAuth 2.1 authentication when enabled (MCP spec).
+"""
 
 from fastmcp import FastMCP
 from typing import List
 import argparse
+{% if config.with_auth %}
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from {{ config.package_name }}.services.auth_service import AuthService
+from {{ config.package_name }}.auth_middleware import AuthMiddleware
+from auth_config import get_auth_config, DEV_TEST_TOKENS_ENABLED, DEV_DEFAULT_SCOPES
+{% endif %}
 
 from {{ config.package_name }}.services.tool_service import ToolService
 from {{ config.package_name }}.services.resource_service import ResourceService
@@ -37,6 +48,62 @@ def get_available_resources() -> List[Resource]:
     ]
 
 
+{% if config.with_auth %}
+def setup_auth(app: FastAPI, auth_service: AuthService) -> None:
+    """Set up authentication endpoints and metadata discovery.
+    
+    Implements MCP OAuth 2.1 spec endpoints:
+    - /.well-known/oauth-authorization-server (RFC 8414)
+    - /.well-known/openid-configuration (OpenID Connect Discovery)
+    - /.well-known/oauth-protected-resource (RFC 9470)
+    """
+    auth_config = get_auth_config()
+    
+    # OAuth 2.0 Authorization Server Metadata (RFC 8414)
+    @app.get("/.well-known/oauth-authorization-server")
+    async def authorization_server_metadata():
+        """Return authorization server metadata for client discovery."""
+        return auth_service.get_authorization_server_metadata()
+    
+    # OpenID Connect Discovery (fallback)
+    @app.get("/.well-known/openid-configuration")
+    async def openid_configuration():
+        """Return OpenID Connect configuration (same as OAuth metadata)."""
+        return auth_service.get_authorization_server_metadata()
+    
+    # Protected Resource Metadata (RFC 9470)
+    @app.get("/.well-known/oauth-protected-resource")
+    async def protected_resource_metadata():
+        """Return protected resource metadata."""
+        return auth_service.get_protected_resource_metadata(
+            resource=auth_config["resource_id"]
+        )
+    
+    # Development/Testing endpoints (only in dev mode)
+    if DEV_TEST_TOKENS_ENABLED:
+        @app.post("/dev/token")
+        async def create_dev_token(request: Request):
+            """Create a test token for development (NOT FOR PRODUCTION)."""
+            body = await request.json()
+            scopes = body.get("scopes", DEV_DEFAULT_SCOPES)
+            resource = body.get("resource", auth_config["resource_id"])
+            expires_in = body.get("expires_in", 3600)
+            
+            token = auth_service.create_test_token(
+                scopes=scopes,
+                resource=resource,
+                expires_in_seconds=expires_in
+            )
+            
+            return {
+                "access_token": token,
+                "token_type": "Bearer",
+                "expires_in": expires_in,
+                "scope": " ".join(scopes),
+            }
+{% endif %}
+
+
 def create_server() -> FastMCP:
     """Create and configure the MCP server."""
     mcp = FastMCP(
@@ -54,12 +121,47 @@ def create_server() -> FastMCP:
     resource_service.register_resources(get_available_resources())
     resource_service.register_mcp_handlers(mcp)
     
+    {% if config.with_auth %}
+    # Set up authentication if enabled
+    auth_config = get_auth_config()
+    if auth_config["enabled"]:
+        auth_service = AuthService(
+            issuer=auth_config["issuer"],
+            authorization_endpoint=auth_config["authorization_endpoint"],
+            token_endpoint=auth_config["token_endpoint"],
+            registration_endpoint=auth_config["registration_endpoint"],
+            jwks_uri=auth_config["jwks_uri"],
+            resource_metadata_uri=auth_config["resource_metadata_uri"],
+            supported_scopes=auth_config["supported_scopes"],
+        )
+        
+        # Get the underlying FastAPI app
+        app = mcp.app  # FastMCP exposes the FastAPI app
+        
+        # Set up auth endpoints
+        setup_auth(app, auth_service)
+        
+        # Add auth middleware
+        auth_middleware = AuthMiddleware(
+            auth_service=auth_service,
+            exempt_paths=auth_config["exempt_paths"],
+            realm=auth_config["realm"]
+        )
+        app.middleware("http")(auth_middleware)
+        
+        print("🔐 OAuth 2.1 authentication enabled")
+        print(f"   Issuer: {auth_config['issuer']}")
+        print(f"   Metadata: /.well-known/oauth-authorization-server")
+        if auth_config["dev_mode"]:
+            print("   ⚠️  DEV MODE: Test tokens enabled at POST /dev/token")
+    {% endif %}
+    
     return mcp
 
 
 def main():
-    """Entry point for Streamable HTTP transport."""
-    parser = argparse.ArgumentParser(description='Run MCP server with Streamable HTTP transport')
+    """Entry point for HTTP transport."""
+    parser = argparse.ArgumentParser(description='Run MCP server with HTTP transport')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--port', type=int, default=8000, help='Port to listen on')
     parser.add_argument('--reload', action='store_true', help='Enable auto-reload for development')
@@ -67,13 +169,12 @@ def main():
     
     mcp = create_server()
     
-    # Run with Streamable HTTP transport
+    # Run with HTTP transport
     mcp.run(
-        transport="streamable-http",
-        mount_path="/mcp",
+        transport="http",
         host=args.host,
         port=args.port,
-        reload=args.reload
+        path="/mcp"
     )
 
 

@@ -1,8 +1,7 @@
 """Service layer for managing tools."""
 from typing import Dict, List, Any
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from {{ config.package_name }}.interfaces.tool import Tool, ToolResponse, ToolContent
-from pydantic import Field
 
 
 class ToolService:
@@ -26,12 +25,13 @@ class ToolService:
             raise ValueError(f"Tool not found: {tool_name}")
         return self._tools[tool_name]
 
-    async def execute_tool(self, tool_name: str, input_data: Dict[str, Any]) -> ToolResponse:
+    async def execute_tool(self, tool_name: str, input_data: Dict[str, Any], ctx: Context = None) -> ToolResponse:
         """Execute a tool by name with given arguments.
 
         Args:
             tool_name: The name of the tool to execute
             input_data: Dictionary of input arguments for the tool
+            ctx: Optional FastMCP Context for tools that need it (sampling, logging, etc.)
 
         Returns:
             The tool's response containing the execution results
@@ -45,8 +45,13 @@ class ToolService:
         # Convert input dictionary to the tool's input model
         input_model = tool.input_model(**input_data)
 
-        # Execute the tool with validated input
-        return await tool.execute(input_model)
+        # Execute the tool with validated input, passing ctx if the tool accepts it
+        import inspect
+        sig = inspect.signature(tool.execute)
+        if 'ctx' in sig.parameters and ctx is not None:
+            return await tool.execute(input_model, ctx)
+        else:
+            return await tool.execute(input_model)
 
     def _process_tool_content(self, content: ToolContent) -> Any:
         """Process a ToolContent object based on its type.
@@ -61,6 +66,12 @@ class ToolService:
             return content.text
         elif content.type == "json" and content.json_data is not None:
             return content.json_data
+        elif content.type == "resource_link":
+            # Return resource link as structured object (MCP 2025-06-18)
+            link_data = {"type": "resource_link", "uri": content.uri}
+            if content.title:
+                link_data["title"] = content.title
+            return link_data
         else:
             # Default to returning whatever is available
             return content.text or content.json_data or {}
@@ -87,14 +98,16 @@ class ToolService:
         return [self._process_tool_content(content) for content in response.content]
 
     def register_mcp_handlers(self, mcp: FastMCP) -> None:
-        """Register all tools as MCP handlers."""
+        """Register all tools as MCP handlers with support for structured outputs."""
         for tool in self._tools.values():
             # Get the tool's schema
             schema = tool.input_model.model_json_schema()
             properties = schema.get("properties", {})
 
-            # Create a function signature that matches the schema with parameter descriptions
+            # Create a function signature that matches the schema
+            # FastMCP will read descriptions and validation from the Pydantic model schema
             params = []
+            required_fields = schema.get("required", [])
 
             for name, info in properties.items():
                 type_hint = "str"  # Default to str
@@ -105,23 +118,52 @@ class ToolService:
                 elif info.get("type") == "boolean":
                     type_hint = "bool"
 
-                default = info.get("default", "...")
-                description = info.get("description", "")
-
-                # Create parameter string for function definition with Field for descriptions
-                if default == "...":
-                    params.append(f"{name}: {type_hint} = Field(description='{description}')")
+                # Only add defaults for optional parameters
+                if name not in required_fields and "default" in info:
+                    default_val = repr(info["default"])
+                    params.append(f"{name}: {type_hint} = {default_val}")
                 else:
-                    params.append(f"{name}: {type_hint} = Field(description='{description}', default={repr(default)})")
+                    # Required parameter - no default
+                    params.append(f"{name}: {type_hint}")
 
-            # Create the function definition
-            fn_def = f"async def {tool.name}({', '.join(params)}):\n"
+            # Determine return type annotation based on output_model
+            return_annotation = ""
+            if tool.output_model:
+                # Use the output model class name for structured outputs
+                # FastMCP will auto-generate the output schema from the Pydantic model
+                return_annotation = f" -> tool.output_model"
+
+            # Create the function definition - use Context type for FastMCP dependency injection
+            # IMPORTANT: ctx must come FIRST before any parameters with defaults
+            param_str = ', '.join(params) if params else ""
+            # Add ctx as a type-annotated parameter - FastMCP will inject it automatically
+            # and NOT expose it in the tool schema
+            if param_str:
+                fn_def = f"async def {tool.name}(ctx: Context, {param_str}){return_annotation}:\n"
+            else:
+                fn_def = f"async def {tool.name}(ctx: Context){return_annotation}:\n"
             fn_def += f'    """{tool.description}"""\n'
-            fn_def += "    result = await self.execute_tool(tool.name, locals())\n"
-            fn_def += "    return self._serialize_response(result)"
+            fn_def += "    # Extract parameters, excluding ctx\n"
+            fn_def += "    params_dict = {k: v for k, v in locals().items() if k != 'ctx'}\n"
+            fn_def += "    result = await self.execute_tool(tool.name, params_dict, ctx)\n"
+
+            if tool.output_model:
+                # If the tool has an output model, convert the response to that model
+                fn_def += "    # Extract data for structured output\n"
+                fn_def += "    if result.content and len(result.content) > 0:\n"
+                fn_def += "        content_item = result.content[0]\n"
+                fn_def += "        if content_item.json_data:\n"
+                fn_def += "            return tool.output_model(**content_item.json_data)\n"
+                fn_def += "        elif content_item.model:\n"
+                fn_def += "            return content_item.model\n"
+                fn_def += "    # Fallback to serialized response\n"
+                fn_def += "    return self._serialize_response(result)\n"
+            else:
+                # No output model, return serialized response as before
+                fn_def += "    return self._serialize_response(result)"
 
             # Create the function
-            namespace = {"self": self, "tool": tool, "Field": Field}
+            namespace = {"self": self, "tool": tool, "Context": Context}
             exec(fn_def, namespace)
             handler = namespace[tool.name]
 

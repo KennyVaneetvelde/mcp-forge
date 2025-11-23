@@ -1,0 +1,186 @@
+"""Authentication configuration for {{ config.project_name }} MCP Server.
+
+This module provides default auth configuration following the MCP OAuth 2.1 spec.
+Customize this file based on your authentication requirements.
+"""
+
+from typing import List, Optional
+
+
+# =============================================================================
+# AUTHENTICATION MODE
+# =============================================================================
+
+# Set to True to enable OAuth 2.1 authentication for HTTP/SSE transports
+# When False, the server runs without authentication (suitable for local/trusted environments)
+AUTH_ENABLED = False  # Set to True in production with proper OAuth setup
+
+
+# =============================================================================
+# AUTHORIZATION SERVER CONFIGURATION
+# =============================================================================
+
+# The authorization server issuer identifier (must be an HTTPS URL in production)
+# This is typically your auth provider's base URL (e.g., Auth0, Okta, Keycloak)
+ISSUER = "https://auth.example.com"
+
+# OAuth 2.1 endpoint URLs
+# These URLs should match your OAuth provider's configuration
+AUTHORIZATION_ENDPOINT = f"{ISSUER}/authorize"
+TOKEN_ENDPOINT = f"{ISSUER}/token"
+REGISTRATION_ENDPOINT = f"{ISSUER}/register"  # Optional: for dynamic client registration
+JWKS_URI = f"{ISSUER}/jwks"  # Optional: for JWT signature verification
+
+
+# =============================================================================
+# PROTECTED RESOURCE CONFIGURATION
+# =============================================================================
+
+# The resource identifier for this MCP server (typically the server's base URL)
+# This is included in the 'resource' parameter during OAuth flows
+RESOURCE_ID = "https://mcp.example.com"
+
+# URL where the protected resource metadata is served
+# As per RFC 9470, this should be at /.well-known/oauth-protected-resource
+RESOURCE_METADATA_URI = f"{RESOURCE_ID}/.well-known/oauth-protected-resource"
+
+
+# =============================================================================
+# SCOPE CONFIGURATION
+# =============================================================================
+
+# Define the scopes supported by this MCP server
+# Scopes control what operations clients can perform
+SUPPORTED_SCOPES: List[str] = [
+    # Tool scopes
+    "tools:list",        # List available tools
+    "tools:call",        # Execute tools
+    
+    # Resource scopes
+    "resources:list",    # List available resources
+    "resources:read",    # Read resource content
+    "resources:subscribe",  # Subscribe to resource updates (if supported)
+    
+    # Prompt scopes
+    "prompts:list",      # List available prompts
+    "prompts:get",       # Get prompt content
+    
+    # Root scopes
+    "roots:list",        # List filesystem roots (if supported)
+    
+    # Admin scopes
+    "server:admin",      # Full administrative access
+]
+
+# Define scope requirements for different operations
+# These are checked by the auth middleware
+SCOPE_REQUIREMENTS = {
+    "tools": ["tools:list", "tools:call"],
+    "resources": ["resources:list", "resources:read"],
+    "prompts": ["prompts:list", "prompts:get"],
+    "roots": ["roots:list"],
+}
+
+
+# =============================================================================
+# MIDDLEWARE CONFIGURATION
+# =============================================================================
+
+# Paths that are exempt from authentication (publicly accessible)
+EXEMPT_PATHS: List[str] = [
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/openid-configuration",
+    "/.well-known/oauth-protected-resource",
+    "/health",      # Health check endpoint
+    "/docs",        # API documentation (optional)
+    "/openapi.json",  # OpenAPI schema (optional)
+]
+
+# Authentication realm for WWW-Authenticate headers
+AUTH_REALM = "{{ config.project_name }}-mcp-server"
+
+
+# =============================================================================
+# DEVELOPMENT/TESTING CONFIGURATION
+# =============================================================================
+
+# For local development and testing only
+# DO NOT USE IN PRODUCTION
+DEV_MODE = True
+
+# Generate test tokens when in dev mode
+# These tokens bypass actual OAuth flows for easier testing
+DEV_TEST_TOKENS_ENABLED = True
+
+# Default test token scopes (for development)
+DEV_DEFAULT_SCOPES = SUPPORTED_SCOPES  # Full access in dev mode
+
+
+# =============================================================================
+# INTEGRATION WITH EXTERNAL AUTH PROVIDERS
+# =============================================================================
+
+def get_auth_config():
+    """Get the current auth configuration.
+    
+    Returns:
+        Dictionary with auth configuration
+    """
+    return {
+        "enabled": AUTH_ENABLED,
+        "issuer": ISSUER,
+        "authorization_endpoint": AUTHORIZATION_ENDPOINT,
+        "token_endpoint": TOKEN_ENDPOINT,
+        "registration_endpoint": REGISTRATION_ENDPOINT,
+        "jwks_uri": JWKS_URI,
+        "resource_id": RESOURCE_ID,
+        "resource_metadata_uri": RESOURCE_METADATA_URI,
+        "supported_scopes": SUPPORTED_SCOPES,
+        "exempt_paths": EXEMPT_PATHS,
+        "realm": AUTH_REALM,
+        "dev_mode": DEV_MODE,
+    }
+
+
+# =============================================================================
+# CUSTOM TOKEN VALIDATOR (Optional)
+# =============================================================================
+
+# Example of how to integrate with an external OAuth provider
+# Uncomment and customize based on your provider
+
+# import httpx
+# from {{ config.package_name }}.services.auth_service import AccessToken
+# from datetime import datetime, timedelta
+# 
+# async def validate_token_with_auth0(token: str) -> Optional[AccessToken]:
+#     """Validate a token with Auth0.
+#     
+#     Args:
+#         token: The bearer token to validate
+#         
+#     Returns:
+#         AccessToken if valid, None otherwise
+#     """
+#     try:
+#         async with httpx.AsyncClient() as client:
+#             response = await client.get(
+#                 f"{ISSUER}/userinfo",
+#                 headers={"Authorization": f"Bearer {token}"}
+#             )
+#             
+#             if response.status_code == 200:
+#                 user_info = response.json()
+#                 # Extract scopes from token introspection or user info
+#                 scopes = user_info.get("scope", "").split()
+#                 
+#                 return AccessToken(
+#                     token=token,
+#                     scopes=scopes,
+#                     expires_at=datetime.utcnow() + timedelta(hours=1),
+#                     resource=RESOURCE_ID
+#                 )
+#     except Exception:
+#         pass
+#     
+#     return None

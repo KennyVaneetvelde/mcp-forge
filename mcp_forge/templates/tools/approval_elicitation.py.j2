@@ -1,0 +1,57 @@
+"""Example tool demonstrating approval/confirmation elicitation."""
+from {{ config.package_name }}.interfaces.tool import Tool, BaseToolInput, ToolResponse
+from fastmcp import Context
+from pydantic import Field
+
+
+class ApprovalElicitationInput(BaseToolInput):
+    """Input model for approval with elicitation."""
+    action_description: str = Field(..., description="Description of the action to approve")
+
+
+class ApprovalElicitationTool(Tool):
+    """Tool that demonstrates approval/confirmation elicitation.
+
+    This tool requests user approval for an action without collecting
+    any data. It shows how to:
+    - Use response_type=None for simple approval
+    - Handle approval/rejection scenarios
+    - Perform actions conditionally based on approval
+    - Provide clear feedback to users
+    """
+    name = "approval_elicitation"
+    description = "Request user approval for an action through elicitation"
+    input_model = ApprovalElicitationInput
+
+    async def execute(self, input_data: ApprovalElicitationInput, ctx: Context) -> ToolResponse:
+        """Execute approval request with elicitation."""
+        # Request approval without collecting any data
+        result = await ctx.elicit(
+            f"Do you approve this action: {input_data.action_description}?",
+            response_type=None
+        )
+
+        # Handle the user's response
+        if result.action == "accept":
+            # Simulate performing the approved action
+            response_text = f"""✅ Action approved and executed!
+
+Action: {input_data.action_description}
+Status: Completed successfully
+Timestamp: {self._get_timestamp()}
+
+The requested action has been performed."""
+            return ToolResponse.from_text(response_text)
+        elif result.action == "decline":
+            return ToolResponse.from_text(
+                f"❌ Action declined.\n\nThe action '{input_data.action_description}' was not performed."
+            )
+        else:  # cancelled
+            return ToolResponse.from_text(
+                f"⚠️ Approval cancelled.\n\nThe action '{input_data.action_description}' was not performed."
+            )
+
+    def _get_timestamp(self) -> str:
+        """Get current timestamp."""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")

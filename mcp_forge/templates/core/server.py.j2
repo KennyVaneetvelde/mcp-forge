@@ -7,34 +7,79 @@ import sys
 
 from {{ config.package_name }}.services.tool_service import ToolService
 from {{ config.package_name }}.services.resource_service import ResourceService
-from {{ config.package_name }}.services.prompt_service import PromptService
 from {{ config.package_name }}.interfaces.tool import Tool
 from {{ config.package_name }}.interfaces.resource import Resource
-from {{ config.package_name }}.interfaces.prompt import Prompt
 from {{ config.package_name }}.tools import (
     AddNumbersTool,
     DateDifferenceTool,
     ReverseStringTool,
     CurrentTimeTool,
-    RandomNumberTool
+    RandomNumberTool,
+    WeatherTool
 )
+{% if config.with_sampling %}
+from {{ config.package_name }}.tools import ReasoningTool
+{% endif %}
+{% if config.with_elicitation %}
+from {{ config.package_name }}.tools import (
+    GreetingElicitationTool,
+    TaskCreationElicitationTool,
+    MeetingPlannerElicitationTool,
+    ApprovalElicitationTool
+)
+{% endif %}
 from {{ config.package_name }}.resources import HelloWorldResource, UserProfileResource
+{% if config.with_prompts %}
+from {{ config.package_name }}.services.prompt_service import PromptService
+from {{ config.package_name }}.interfaces.prompt import Prompt
 from {{ config.package_name }}.prompts import (
     CodeReviewPrompt,
     DataAnalysisPrompt,
     DebugAssistantPrompt
 )
+{% endif %}
+{% if config.with_roots %}
+from {{ config.package_name }}.services.root_service import RootService
+from roots_config import get_default_roots
+{% endif %}
+{% if config.with_completion %}
+from {{ config.package_name }}.services.completion_service import CompletionService
+from completions import (
+    complete_language_argument,
+    complete_framework_argument,
+    complete_style_argument,
+)
+{% endif %}
+{% if config.with_auth %}
+from {{ config.package_name }}.services.auth_service import AuthService
+from auth_config import get_auth_config
+{% endif %}
 
 
 def get_available_tools() -> List[Tool]:
     """Get list of all available tools."""
-    return [
+    tools = [
         AddNumbersTool(),
         DateDifferenceTool(),
         ReverseStringTool(),
         CurrentTimeTool(),
         RandomNumberTool(),
+        WeatherTool(),  # Demonstrates structured outputs
     ]
+{% if config.with_sampling %}
+    # Add sampling-enabled tools
+    tools.append(ReasoningTool())
+{% endif %}
+{% if config.with_elicitation %}
+    # Add elicitation-enabled tools
+    tools.extend([
+        GreetingElicitationTool(),
+        TaskCreationElicitationTool(),
+        MeetingPlannerElicitationTool(),
+        ApprovalElicitationTool(),
+    ])
+{% endif %}
+    return tools
 
 
 def get_available_resources() -> List[Resource]:
@@ -45,6 +90,7 @@ def get_available_resources() -> List[Resource]:
     ]
 
 
+{% if config.with_prompts %}
 def get_available_prompts() -> List[Prompt]:
     """Get list of all available prompts."""
     return [
@@ -52,6 +98,7 @@ def get_available_prompts() -> List[Prompt]:
         DataAnalysisPrompt(),
         DebugAssistantPrompt(),
     ]
+{% endif %}
 
 
 def create_server() -> FastMCP:
@@ -62,7 +109,6 @@ def create_server() -> FastMCP:
     
     tool_service = ToolService()
     resource_service = ResourceService()
-    prompt_service = PromptService()
 
     # Register all tools and their MCP handlers
     tool_service.register_tools(get_available_tools())
@@ -71,10 +117,42 @@ def create_server() -> FastMCP:
     # Register all resources and their MCP handlers
     resource_service.register_resources(get_available_resources())
     resource_service.register_mcp_handlers(mcp)
-    
+
+{% if config.with_prompts %}
     # Register all prompts and their MCP handlers
+    prompt_service = PromptService()
     prompt_service.register_prompts(get_available_prompts())
     prompt_service.register_mcp_handlers(mcp)
+{% endif %}
+{% if config.with_roots %}
+    # Register roots service
+    root_service = RootService(roots=get_default_roots())
+    root_service.register_mcp_handlers(mcp)
+{% endif %}
+{% if config.with_completion %}
+    # Register completion service with example handlers
+    completion_service = CompletionService()
+    
+    # Register completion handlers for prompts
+{% if config.with_prompts %}
+    # code_review prompt completions
+    completion_service.register_completion(
+        "ref/prompt", "code_review", "language", complete_language_argument
+    )
+    completion_service.register_completion(
+        "ref/prompt", "code_review", "framework", complete_framework_argument
+    )
+    # data_analysis prompt completions
+    completion_service.register_completion(
+        "ref/prompt", "data_analysis", "language", complete_language_argument
+    )
+    completion_service.register_completion(
+        "ref/prompt", "data_analysis", "style", complete_style_argument
+    )
+{% endif %}
+    
+    completion_service.register_mcp_handlers(mcp)
+{% endif %}
     
     return mcp
 

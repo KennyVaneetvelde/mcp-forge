@@ -28,7 +28,11 @@ class ToolContent(BaseModel):
     # Model content (will be converted to json_data during serialization)
     model: Optional[Any] = Field(None, exclude=True, description="Pydantic model instance")
 
-    # Add more content types as needed (e.g., binary, image, etc.)
+    # Resource link content (MCP 2025-06-18)
+    uri: Optional[str] = Field(None, description="Resource URI when type='resource_link'")
+    title: Optional[str] = Field(None, description="Optional resource title for resource_link")
+
+    # Add more content types as needed (e.g., binary, image, audio, etc.)
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to handle model conversion."""
@@ -84,6 +88,50 @@ class ToolResponse(BaseModel):
                 )
             ]
         )
+
+    @classmethod
+    def from_resource_link(cls, uri: str, title: Optional[str] = None, description: Optional[str] = None) -> "ToolResponse":
+        """Create a ToolResponse that links to an MCP resource.
+
+        This is useful when a tool wants to reference data in a resource
+        rather than returning it inline. Introduced in MCP spec 2025-06-18.
+
+        Args:
+            uri: The MCP resource URI (e.g., "resource://data/analysis-123")
+            title: Optional human-readable title for the resource
+            description: Optional description text to accompany the link
+
+        Returns:
+            A ToolResponse with a resource link
+
+        Example:
+            return ToolResponse.from_resource_link(
+                uri="resource://analysis/2024-01-report",
+                title="2024 Analysis Report",
+                description="The analysis has been saved as a resource"
+            )
+        """
+        content_items = []
+
+        # Add description as text if provided
+        if description:
+            content_items.append(
+                ToolContent(
+                    type="text",
+                    text=description
+                )
+            )
+
+        # Add resource link
+        content_items.append(
+            ToolContent(
+                type="resource_link",
+                uri=uri,
+                title=title
+            )
+        )
+
+        return cls(content=content_items)
 
 
 class Tool(ABC):

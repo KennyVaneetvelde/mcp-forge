@@ -1,0 +1,307 @@
+"""Service layer for managing OAuth 2.1 authorization (MCP Spec)."""
+from typing import Dict, List, Optional, Callable, Awaitable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import secrets
+import hashlib
+import base64
+
+
+@dataclass
+class AccessToken:
+    """Represents an OAuth 2.1 access token."""
+    token: str
+    scopes: List[str]
+    expires_at: datetime
+    resource: str  # The MCP server resource this token is for
+    
+    def is_expired(self) -> bool:
+        """Check if the token is expired."""
+        return datetime.utcnow() >= self.expires_at
+    
+    def has_scope(self, required_scope: str) -> bool:
+        """Check if the token has a required scope."""
+        return required_scope in self.scopes
+    
+    def has_all_scopes(self, required_scopes: List[str]) -> bool:
+        """Check if the token has all required scopes."""
+        return all(scope in self.scopes for scope in required_scopes)
+
+
+class AuthService:
+    """Service for managing OAuth 2.1 authorization for MCP servers.
+    
+    This service implements the MCP authorization specification:
+    - OAuth 2.1 compliant authorization
+    - Token validation and scope checking
+    - Authorization Server Metadata (RFC 8414)
+    - Protected Resource Metadata (RFC 9470)
+    - WWW-Authenticate headers for 401/403 responses
+    
+    For production use, integrate with a proper OAuth 2.1 provider like:
+    - Auth0, Okta, or Keycloak for managed solutions
+    - authlib or oauthlib for Python implementations
+    """
+    
+    def __init__(
+        self,
+        issuer: str,
+        authorization_endpoint: str,
+        token_endpoint: str,
+        registration_endpoint: Optional[str] = None,
+        jwks_uri: Optional[str] = None,
+        resource_metadata_uri: Optional[str] = None,
+        supported_scopes: Optional[List[str]] = None,
+    ):
+        """Initialize the auth service.
+        
+        Args:
+            issuer: The authorization server issuer identifier
+            authorization_endpoint: URL of the authorization endpoint
+            token_endpoint: URL of the token endpoint
+            registration_endpoint: Optional URL for dynamic client registration
+            jwks_uri: Optional URL for JSON Web Key Set
+            resource_metadata_uri: Optional URL for protected resource metadata
+            supported_scopes: List of scopes this server supports
+        """
+        self.issuer = issuer
+        self.authorization_endpoint = authorization_endpoint
+        self.token_endpoint = token_endpoint
+        self.registration_endpoint = registration_endpoint
+        self.jwks_uri = jwks_uri
+        self.resource_metadata_uri = resource_metadata_uri
+        self.supported_scopes = supported_scopes or []
+        
+        # In-memory token storage (use Redis/database in production)
+        self._tokens: Dict[str, AccessToken] = {}
+        
+        # Custom token validators (for integration with external auth systems)
+        self._token_validators: List[Callable[[str], Awaitable[Optional[AccessToken]]]] = []
+    
+    def register_token_validator(
+        self,
+        validator: Callable[[str], Awaitable[Optional[AccessToken]]]
+    ) -> None:
+        """Register a custom token validator.
+        
+        This allows integration with external OAuth providers.
+        The validator should return an AccessToken if valid, None otherwise.
+        """
+        self._token_validators.append(validator)
+    
+    async def validate_token(self, token: str) -> Optional[AccessToken]:
+        """Validate an access token.
+        
+        First checks internal storage, then tries custom validators.
+        
+        Args:
+            token: The bearer token to validate
+            
+        Returns:
+            AccessToken if valid, None otherwise
+        """
+        # Check internal storage first
+        if token in self._tokens:
+            access_token = self._tokens[token]
+            if not access_token.is_expired():
+                return access_token
+            else:
+                # Clean up expired token
+                del self._tokens[token]
+        
+        # Try custom validators
+        for validator in self._token_validators:
+            result = await validator(token)
+            if result is not None:
+                return result
+        
+        return None
+    
+    async def check_authorization(
+        self,
+        auth_header: Optional[str],
+        required_scopes: Optional[List[str]] = None,
+        resource: Optional[str] = None
+    ) -> tuple[bool, Optional[str], Optional[AccessToken]]:
+        """Check if a request is authorized.
+        
+        Args:
+            auth_header: The Authorization header value
+            required_scopes: List of scopes required for this operation
+            resource: The resource being accessed
+            
+        Returns:
+            Tuple of (is_authorized, error_description, access_token)
+            - is_authorized: True if authorized, False otherwise
+            - error_description: Error message if not authorized, None otherwise
+            - access_token: The validated AccessToken if authorized, None otherwise
+        """
+        if not auth_header:
+            return False, "Missing Authorization header", None
+        
+        # Parse Bearer token
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return False, "Invalid Authorization header format", None
+        
+        token_value = parts[1]
+        
+        # Validate token
+        access_token = await self.validate_token(token_value)
+        if not access_token:
+            return False, "The access token is invalid or expired", None
+        
+        # Check resource match if specified
+        if resource and access_token.resource != resource:
+            return False, f"Token not valid for resource {resource}", None
+        
+        # Check scopes if required
+        if required_scopes and not access_token.has_all_scopes(required_scopes):
+            missing_scopes = [s for s in required_scopes if s not in access_token.scopes]
+            return False, f"Insufficient scope. Missing: {', '.join(missing_scopes)}", None
+        
+        return True, None, access_token
+    
+    def create_www_authenticate_header(
+        self,
+        error: str,
+        error_description: Optional[str] = None,
+        scopes: Optional[List[str]] = None,
+        realm: Optional[str] = None
+    ) -> str:
+        """Create a WWW-Authenticate header for 401/403 responses.
+        
+        As per MCP spec and RFC 6750.
+        
+        Args:
+            error: The error code (e.g., "invalid_token", "insufficient_scope")
+            error_description: Human-readable error description
+            scopes: Required scopes for access
+            realm: The authentication realm
+            
+        Returns:
+            The WWW-Authenticate header value
+        """
+        parts = ["Bearer"]
+        
+        if realm:
+            parts.append(f'realm="{realm}"')
+        
+        parts.append(f'error="{error}"')
+        
+        if error_description:
+            parts.append(f'error_description="{error_description}"')
+        
+        if scopes:
+            parts.append(f'scope="{" ".join(scopes)}"')
+        
+        if self.resource_metadata_uri:
+            parts.append(f'resource_metadata="{self.resource_metadata_uri}"')
+        
+        return ", ".join(parts)
+    
+    def get_authorization_server_metadata(self) -> Dict:
+        """Get OAuth 2.0 Authorization Server Metadata (RFC 8414).
+        
+        This should be served at:
+        - /.well-known/oauth-authorization-server (for base URLs)
+        - /.well-known/oauth-authorization-server/{path} (for paths)
+        - /.well-known/openid-configuration (OpenID Connect fallback)
+        
+        Returns:
+            The metadata document
+        """
+        metadata = {
+            "issuer": self.issuer,
+            "authorization_endpoint": self.authorization_endpoint,
+            "token_endpoint": self.token_endpoint,
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"],  # PKCE required for OAuth 2.1
+            "token_endpoint_auth_methods_supported": ["none", "client_secret_basic"],
+        }
+        
+        if self.jwks_uri:
+            metadata["jwks_uri"] = self.jwks_uri
+        
+        if self.registration_endpoint:
+            metadata["registration_endpoint"] = self.registration_endpoint
+        
+        if self.supported_scopes:
+            metadata["scopes_supported"] = self.supported_scopes
+        
+        return metadata
+    
+    def get_protected_resource_metadata(self, resource: str) -> Dict:
+        """Get Protected Resource Metadata (RFC 9470).
+        
+        This should be served at /.well-known/oauth-protected-resource
+        
+        Args:
+            resource: The resource identifier (usually the server URL)
+            
+        Returns:
+            The protected resource metadata document
+        """
+        metadata = {
+            "resource": resource,
+            "authorization_servers": [self.issuer],
+        }
+        
+        if self.supported_scopes:
+            metadata["scopes_supported"] = self.supported_scopes
+            metadata["scope_syntax"] = "space-delimited"
+        
+        return metadata
+    
+    # Helper methods for testing/development (remove in production)
+    
+    def create_test_token(
+        self,
+        scopes: List[str],
+        resource: str,
+        expires_in_seconds: int = 3600
+    ) -> str:
+        """Create a test access token (FOR DEVELOPMENT ONLY).
+        
+        In production, tokens should be issued by the OAuth flow.
+        
+        Args:
+            scopes: The scopes to grant
+            resource: The resource this token is for
+            expires_in_seconds: Token lifetime in seconds
+            
+        Returns:
+            The generated token string
+        """
+        # Generate a secure random token
+        token = secrets.token_urlsafe(32)
+        
+        # Create AccessToken
+        access_token = AccessToken(
+            token=token,
+            scopes=scopes,
+            expires_at=datetime.utcnow() + timedelta(seconds=expires_in_seconds),
+            resource=resource
+        )
+        
+        # Store it
+        self._tokens[token] = access_token
+        
+        return token
+    
+    @staticmethod
+    def generate_pkce_challenge() -> tuple[str, str]:
+        """Generate PKCE code verifier and challenge (for clients).
+        
+        Returns:
+            Tuple of (code_verifier, code_challenge)
+        """
+        # Generate code verifier (43-128 characters)
+        code_verifier = secrets.token_urlsafe(32)
+        
+        # Generate code challenge using S256 method
+        challenge_bytes = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        code_challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
+        
+        return code_verifier, code_challenge

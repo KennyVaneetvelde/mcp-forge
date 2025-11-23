@@ -1,0 +1,39 @@
+"""Example tool demonstrating simple scalar elicitation."""
+from {{ config.package_name }}.interfaces.tool import Tool, BaseToolInput, ToolResponse
+from fastmcp import Context
+
+
+class GreetingElicitationInput(BaseToolInput):
+    """Input model for greeting with elicitation."""
+    pass  # No input needed - we'll elicit the name from the user
+
+
+class GreetingElicitationTool(Tool):
+    """Tool that demonstrates simple scalar elicitation.
+
+    This tool requests the user's name through elicitation and returns
+    a personalized greeting. It shows how to:
+    - Request simple scalar values (string)
+    - Handle accept/decline/cancel actions
+    - Return different responses based on user action
+    """
+    name = "greeting_elicitation"
+    description = "Greet a user by asking for their name through elicitation"
+    input_model = GreetingElicitationInput
+
+    async def execute(self, input_data: BaseToolInput, ctx: Context) -> ToolResponse:
+        """Execute the greeting with elicitation."""
+        # Request the user's name using elicitation
+        result = await ctx.elicit(
+            "What's your name?",
+            response_type=str
+        )
+
+        # Handle the user's response
+        if result.action == "accept":
+            name = result.data
+            return ToolResponse.from_text(f"Hello, {name}! Nice to meet you! 👋")
+        elif result.action == "decline":
+            return ToolResponse.from_text("No problem, I'll just call you 'friend'! 😊")
+        else:  # cancelled
+            return ToolResponse.from_text("Greeting cancelled. Have a great day!")

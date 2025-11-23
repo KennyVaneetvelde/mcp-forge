@@ -1,0 +1,77 @@
+"""Example tool demonstrating multi-turn elicitation."""
+from {{ config.package_name }}.interfaces.tool import Tool, BaseToolInput, ToolResponse
+from fastmcp import Context
+from typing import Literal
+
+
+class MeetingPlannerElicitationInput(BaseToolInput):
+    """Input model for meeting planner with elicitation."""
+    pass  # No input needed - we'll elicit details step by step
+
+
+class MeetingPlannerElicitationTool(Tool):
+    """Tool that demonstrates multi-turn elicitation.
+
+    This tool gathers meeting information through multiple sequential
+    elicitation requests. It shows how to:
+    - Make multiple elicitation calls in sequence
+    - Check for cancellation at each step
+    - Build up data progressively
+    - Use Literal types for enum choices
+    - Handle early termination gracefully
+    """
+    name = "meeting_planner_elicitation"
+    description = "Plan a meeting by gathering details step by step through elicitation"
+    input_model = MeetingPlannerElicitationInput
+
+    async def execute(self, input_data: BaseToolInput, ctx: Context) -> ToolResponse:
+        """Execute meeting planning with multi-turn elicitation."""
+        # Step 1: Get meeting title
+        title_result = await ctx.elicit(
+            "What's the meeting title?",
+            response_type=str
+        )
+        if title_result.action != "accept":
+            return ToolResponse.from_text("Meeting planning cancelled at step 1 (title).")
+
+        # Step 2: Get duration
+        duration_result = await ctx.elicit(
+            "Duration in minutes?",
+            response_type=int
+        )
+        if duration_result.action != "accept":
+            return ToolResponse.from_text("Meeting planning cancelled at step 2 (duration).")
+
+        # Step 3: Get priority
+        priority_result = await ctx.elicit(
+            "Is this meeting urgent?",
+            response_type=Literal["yes", "no"]
+        )
+        if priority_result.action != "accept":
+            return ToolResponse.from_text("Meeting planning cancelled at step 3 (urgency).")
+
+        # Step 4: Get attendees count
+        attendees_result = await ctx.elicit(
+            "How many attendees?",
+            response_type=int
+        )
+        if attendees_result.action != "accept":
+            return ToolResponse.from_text("Meeting planning cancelled at step 4 (attendees).")
+
+        # All steps completed successfully
+        title = title_result.data
+        duration = duration_result.data
+        urgent = priority_result.data == "yes"
+        attendees = attendees_result.data
+
+        urgency_emoji = "🔴" if urgent else "🟢"
+        response_text = f"""📅 Meeting planned successfully!
+
+Title: {title}
+Duration: {duration} minutes
+Urgency: {urgency_emoji} {"URGENT" if urgent else "Normal"}
+Attendees: {attendees} people
+
+Your meeting has been scheduled."""
+
+        return ToolResponse.from_text(response_text)

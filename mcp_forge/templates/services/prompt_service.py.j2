@@ -1,6 +1,7 @@
 """Service layer for managing prompts."""
 from typing import Dict, List, Any
 from fastmcp import FastMCP
+from mcp.types import PromptMessage as MCPPromptMessage, TextContent
 from {{ config.package_name }}.interfaces.prompt import Prompt, PromptMessage
 
 
@@ -42,8 +43,57 @@ class PromptService:
         return await prompt.generate(**kwargs)
 
     def register_mcp_handlers(self, mcp: FastMCP) -> None:
-        """Register all prompts as MCP handlers using FastMCP decorators."""
-        # For now, prompts need to be registered individually with specific parameters
-        # FastMCP doesn't support dynamic kwargs for prompts
-        # You can add specific prompt handlers here as needed
-        pass
+        """Register all prompts as MCP handlers using FastMCP decorators.
+
+        This method dynamically creates and registers prompt handlers for each
+        registered Prompt instance, properly handling arguments and metadata.
+        """
+        for prompt in self._prompts.values():
+            # Create a wrapper function that will be registered as the MCP prompt
+            # We use exec to create a function with the proper signature based on prompt arguments
+
+            # Build the parameter list for the function signature
+            params = []
+            for arg in prompt.arguments:
+                if arg.required:
+                    params.append(f"{arg.name}: str")
+                else:
+                    default_val = f'"{arg.default}"' if isinstance(arg.default, str) else str(arg.default)
+                    params.append(f"{arg.name}: str = {default_val}")
+
+            param_str = ", ".join(params) if params else ""
+
+            # Create the function code without f-string to avoid escaping issues
+            arg_str = ', '.join(f'{arg.name}={arg.name}' for arg in prompt.arguments)
+            # Use triple-quoted string to avoid Jinja2 interpretation
+            func_code = """
+async def """ + f"{prompt.name}_handler({param_str})" + """:
+    '''Generated prompt handler for """ + f"{prompt.name}" + """'''
+    prompt_instance = self.get_prompt(\"""" + f"{prompt.name}" + """\")
+    messages = await prompt_instance.generate(""" + f"{arg_str}" + """)
+
+    # Convert our PromptMessage objects to MCP PromptMessage objects
+    return [
+        MCPPromptMessage(
+            role=msg.role,
+            content=TextContent(type="text", text=msg.content)
+        )
+        for msg in messages
+    ]
+"""
+
+            # Execute the function definition in a namespace with self and MCP types
+            namespace = {
+                "self": self,
+                "MCPPromptMessage": MCPPromptMessage,
+                "TextContent": TextContent
+            }
+            exec(func_code, namespace)
+            handler_func = namespace[f"{prompt.name}_handler"]
+
+            # Register the handler with FastMCP using the prompt decorator
+            # Include metadata from the Prompt instance
+            mcp.prompt(
+                name=prompt.name,
+                description=prompt.description,
+            )(handler_func)
